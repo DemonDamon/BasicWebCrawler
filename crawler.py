@@ -8,6 +8,11 @@ from urllib.parse import urljoin, urlparse
 import hashlib
 import time
 import json
+import tempfile
+try:
+    import browser_cookie3
+except ImportError:
+    browser_cookie3 = None
 
 # 不需要下载的图片格式
 IGNORED_EXTENSIONS = ['.ico', '.webp', '.svg', '.gif', '.bmp', '.tiff']
@@ -269,19 +274,61 @@ if __name__ == "__main__":
         # 检查是否需要cookies
         site_config = get_site_config(url)
         cookies = None
+        cookies_path = None
+        
         if site_config['needs_cookies']:
-            cookies_input = input("该网站可能需要cookies，请输入cookies文件路径（直接回车跳过）: ")
-            if cookies_input.strip():
+            auto_cookie = input("该网站可能需要cookies，是否自动从浏览器获取？(y/n): ").strip().lower()
+            
+            if auto_cookie == 'y' and browser_cookie3:
                 try:
-                    with open(cookies_input, 'r') as f:
-                        cookies = json.load(f)
+                    # 从URL获取域名
+                    domain = urlparse(url).netloc
+                    print(f"正在从浏览器获取 {domain} 的cookies...")
+                    
+                    # 从Chrome浏览器获取指定网站的cookies
+                    browser_cookies = browser_cookie3.chrome(domain_name=domain)
+                    
+                    # 将cookies转换为字典
+                    cookies_dict = {cookie.name: cookie.value for cookie in browser_cookies}
+                    
+                    if cookies_dict:
+                        # 创建临时文件保存cookies
+                        fd, cookies_path = tempfile.mkstemp(suffix='.json', prefix='cookies_')
+                        with os.fdopen(fd, 'w') as f:
+                            json.dump(cookies_dict, f)
+                        
+                        print(f"成功获取cookies并保存到临时文件: {cookies_path}")
+                        cookies = cookies_dict
+                    else:
+                        print(f"未找到 {domain} 的cookies，请确保您已在浏览器中登录该网站")
+                        
                 except Exception as e:
-                    print(f"读取cookies文件失败: {str(e)}")
-                    print("将继续尝试不使用cookies进行爬取...")
+                    print(f"自动获取cookies失败: {str(e)}")
+                    print("将尝试手动输入cookies文件...")
+            
+            # 如果自动获取失败或用户选择手动提供
+            if not cookies:
+                cookies_input = input("请输入cookies文件路径（直接回车跳过）: ")
+                if cookies_input.strip():
+                    try:
+                        cookies_path = cookies_input
+                        with open(cookies_input, 'r') as f:
+                            cookies = json.load(f)
+                    except Exception as e:
+                        print(f"读取cookies文件失败: {str(e)}")
+                        print("将继续尝试不使用cookies进行爬取...")
         
         start_time = time.time()
         markdown_output, page_title = fetch_and_convert_to_markdown(url, cookies=cookies)
         end_time = time.time()
+        
+        # 清理临时文件
+        if cookies_path and cookies_path.startswith(tempfile.gettempdir()):
+            try:
+                os.remove(cookies_path)
+                print(f"临时cookies文件已删除: {cookies_path}")
+            except:
+                pass
         
         if markdown_output:
             # 使用网页标题作为文件名
