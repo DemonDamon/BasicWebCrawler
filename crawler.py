@@ -8,6 +8,11 @@ from urllib.parse import urljoin, urlparse
 import hashlib
 import time
 import json
+import tempfile
+try:
+    import browser_cookie3
+except ImportError:
+    browser_cookie3 = None
 
 # 不需要下载的图片格式
 IGNORED_EXTENSIONS = ['.ico', '.webp', '.svg', '.gif', '.bmp', '.tiff']
