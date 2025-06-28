@@ -12,6 +12,8 @@
 - 自动处理相对路径和绝对路径的图片URL
 - 智能过滤广告和无关内容
 - 支持自定义图片保存目录
+- **自动从文本中提取URL并批量爬取**
+- **支持B站、知乎、AI Base等多个平台**
 
 ## 安装要求
 
@@ -31,6 +33,33 @@
    pip install requests beautifulsoup4 markdownify
    ```
 
+## 测试
+
+项目包含完整的单元测试，确保功能的稳定性和可靠性。
+
+### 运行测试
+
+运行所有测试：
+```bash
+python -m unittest discover tests
+```
+
+运行特定测试：
+```bash
+# 测试URL提取功能
+python -m unittest tests.test_url_extraction
+
+# 测试网站配置功能
+python -m unittest tests.test_site_configs
+```
+
+### 测试覆盖
+
+- **URL提取测试**：验证从文本中提取URL的准确性
+- **批量爬取测试**：测试批量处理多个URL的功能
+- **网站配置测试**：确保各网站特定配置的正确性
+- **URL清理测试**：验证URL标点符号清理功能
+
 ## 使用方法
 
 ### 基本使用
@@ -39,8 +68,29 @@
    ```bash
    python crawler.py
    ```
-2. 输入要爬取的网页URL
-3. 程序会自动将内容保存为Markdown文件，并下载相关图片
+2. 选择运行模式：
+   - 模式1：直接爬取单个URL
+   - 模式2：从文本中提取URL并批量爬取
+3. 根据提示输入内容
+4. 程序会自动将内容保存为Markdown文件，并下载相关图片
+
+### 从文本中提取URL并批量爬取
+
+1. 运行爬虫程序并选择模式2：
+   ```bash
+   python crawler.py
+   # 然后选择"2"
+   ```
+2. 输入包含URL的文本，每行输入完成后按回车
+3. 输入完成后按Ctrl+Z（Windows）或Ctrl+D结束输入
+4. 程序会自动从文本中提取URL，并依次爬取每个URL的内容
+5. 最终生成一个包含所有爬取结果的合并Markdown文件
+
+示例文本输入格式:
+```
+这是一个介绍文章，里面有几个链接：https://www.example.com 和 https://blog.example.org
+还有一些其他网站 www.another-example.net
+```
 
 ### 爬取需要登录的网站（如知乎）
 
@@ -74,9 +124,18 @@
 
 ## 支持的网站
 
-- 通用网站：自动识别主要内容
-- 知乎：优化了内容提取和反爬处理
-- 可通过修改`SITE_CONFIGS`配置支持更多特定网站
+- **通用网站**：自动识别主要内容区域
+- **知乎 (zhihu.com)**：优化了内容提取和反爬处理，支持cookies认证
+- **哔哩哔哩 (bilibili.com)**：针对视频页面优化的内容选择器
+- **AI Base (aibase.com)**：专门针对AI工具页面的内容提取
+- **可扩展**：通过修改`SITE_CONFIGS`配置支持更多特定网站
+
+### 网站配置示例
+
+每个网站都有专门的配置，包括：
+- 特定的HTTP请求头
+- 针对性的内容选择器
+- Cookie需求设置
 
 ## 注意事项
 
