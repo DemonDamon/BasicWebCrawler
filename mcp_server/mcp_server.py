@@ -79,9 +79,13 @@ def crawl_single_url(
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             output_file = f"{sanitized_title}_{timestamp}.md"
             
-            # 保存文件
+            # 保存文件到项目根目录
             try:
-                with open(output_file, 'w', encoding='utf-8') as f:
+                # 获取项目根目录路径
+                project_root = Path(__file__).parent.parent
+                output_path = project_root / output_file
+                
+                with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(markdown_output)
                 
                 return f"✅ 爬取成功！\n\n" \
@@ -95,7 +99,9 @@ def crawl_single_url(
             except OSError as e:
                 # 使用备用文件名
                 fallback_filename = f"webpage_{timestamp}.md"
-                with open(fallback_filename, 'w', encoding='utf-8') as f:
+                project_root = Path(__file__).parent.parent
+                fallback_path = project_root / fallback_filename
+                with open(fallback_path, 'w', encoding='utf-8') as f:
                     f.write(markdown_output)
                 return f"✅ 爬取成功（使用备用文件名）！\n文件: {fallback_filename}\n耗时: {end_time - start_time:.2f} 秒"
         else:
@@ -148,9 +154,13 @@ def crawl_urls_from_text(
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             output_file = f"批量爬取结果_{timestamp}.md"
             
-            # 保存文件
+            # 保存文件到项目根目录
             try:
-                with open(output_file, 'w', encoding='utf-8') as f:
+                # 获取项目根目录路径
+                project_root = Path(__file__).parent.parent
+                output_path = project_root / output_file
+                
+                with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(markdown_output)
                 
                 return f"✅ 批量爬取完成！\n\n" \
@@ -162,7 +172,9 @@ def crawl_urls_from_text(
                        
             except OSError as e:
                 fallback_filename = f"批量爬取_{timestamp}.md"
-                with open(fallback_filename, 'w', encoding='utf-8') as f:
+                project_root = Path(__file__).parent.parent
+                fallback_path = project_root / fallback_filename
+                with open(fallback_path, 'w', encoding='utf-8') as f:
                     f.write(markdown_output)
                 return f"✅ 批量爬取完成（使用备用文件名）！\n文件: {fallback_filename}"
         else:
