@@ -17,6 +17,39 @@
 - **🚀 新增：基于FastMCP的MCP服务器支持**
 - **🤖 AI助手集成：可通过Claude Desktop、Cursor等AI工具直接调用**
 
+## 项目结构
+
+```
+BasicWebCrawler/
+├── crawler.py                      # 核心爬虫模块，包含网页抓取和转换功能
+├── cookie_helper.py                # Cookie获取助手，用于需要登录的网站
+├── requirements.txt                # Python依赖包列表
+├── README.md                       # 项目说明文档
+├── zhihu_cookies.json             # 知乎网站的cookies文件（自动生成）
+├── assets/                        # 文档资源文件夹
+│   └── image.png                  # 说明图片
+├── mcp_server/                    # MCP服务器模块
+│   ├── mcp_server.py              # 核心MCP服务器实现，提供AI助手集成
+│   ├── start_mcp_server.py        # 统一启动脚本，支持多传输方式和依赖检查
+│   ├── debug_mcp.py               # MCP服务器调试脚本，用于功能测试
+│   └── MCP_USAGE_EXAMPLES.md      # MCP使用示例和详细说明文档
+└── tests/                         # 测试模块
+    ├── __init__.py                # 测试包初始化文件
+    ├── test_url_extraction.py     # URL提取功能测试
+    ├── test_site_configs.py       # 网站配置测试
+    └── test_mcp_server.py          # MCP服务器完整功能测试
+```
+
+### 核心文件说明
+
+- **crawler.py** - 主要爬虫逻辑，包含网页内容提取、图片下载、Markdown转换等核心功能
+- **cookie_helper.py** - 辅助工具，帮助用户获取和管理网站cookies，特别适用于需要登录的网站
+- **mcp_server/mcp_server.py** - 基于FastMCP的服务器实现，提供5个工具、1个资源、2个提示模板
+- **mcp_server/start_mcp_server.py** - 统一启动脚本，集成依赖检查、多传输方式支持、配置示例显示
+- **mcp_server/debug_mcp.py** - 开发调试工具，用于测试MCP服务器各项功能是否正常
+- **mcp_server/MCP_USAGE_EXAMPLES.md** - 详细的MCP使用文档，包含配置方法和使用示例
+- **tests/test_mcp_server.py** - 全面的MCP服务器测试套件，验证所有工具和功能
+
 ## 安装要求
 
 - Python 3.8+
@@ -44,33 +77,129 @@ MCP服务器模式允许AI助手（如Claude Desktop、Cursor等）直接调用�
 
 #### 启动MCP服务器
 
-```bash
-# 直接运行MCP服务器
-python mcp_server.py
+MCP服务器支持三种传输方式，每种适用于不同的场景：
 
-# 或使用FastMCP CLI
-fastmcp run mcp_server.py
+##### 🔗 方式一：STDIO 传输（推荐，本地集成）
+
+**特点**：
+- 通过标准输入输出通信，无需网络端口
+- 延迟最低，最适合本地AI助手集成
+- Claude Desktop官方推荐方式
+
+**启动方法**：
+```bash
+# 方法1：使用统一启动脚本（推荐）
+python mcp_server/start_mcp_server.py
+
+# 方法2：使用统一启动脚本 + 命令行参数
+python mcp_server/start_mcp_server.py --transport stdio --auto
+
+# 方法3：直接运行Python脚本
+python mcp_server/mcp_server.py
+
+# 方法4：使用FastMCP CLI
+fastmcp run mcp_server/mcp_server.py
 ```
+
+##### 🌐 方式二：SSE 传输（Server-Sent Events）
+
+**特点**：
+- 基于HTTP的服务器推送事件
+- 支持远程访问和多客户端连接
+- 适合Web应用和分布式系统
+
+**启动方法**：
+```bash
+# 方法1：使用统一启动脚本（推荐）
+python mcp_server/start_mcp_server.py --transport sse --host 127.0.0.1 --port 8000 --auto
+
+# 方法2：使用FastMCP CLI
+fastmcp run mcp_server/mcp_server.py --transport sse --host 127.0.0.1 --port 8000
+
+# 方法3：修改mcp_server.py中的main函数：
+# mcp.run(transport="sse", host="127.0.0.1", port=8000)
+```
+
+**访问地址**：`http://127.0.0.1:8000/sse`
+
+##### ⚡ 方式三：HTTP 传输（Streamable HTTP）
+
+**特点**：
+- 基于HTTP流的双向通信
+- 更现代的网络协议支持
+- 适合云部署和企业级应用
+
+**启动方法**：
+```bash
+# 方法1：使用统一启动脚本（推荐）
+python mcp_server/start_mcp_server.py --transport http --host 127.0.0.1 --port 8000 --auto
+
+# 方法2：使用FastMCP CLI
+fastmcp run mcp_server/mcp_server.py --transport http --host 127.0.0.1 --port 8000
+
+# 方法3：修改mcp_server.py中的main函数：
+# mcp.run(transport="http", host="127.0.0.1", port=8000, path="/mcp")
+```
+
+**访问地址**：`http://127.0.0.1:8000/mcp`
+
+##### 🎯 传输方式选择指南
+
+| 传输方式 | 使用场景 | 优点 | 缺点 | 推荐度 |
+|---------|---------|------|------|--------|
+| **STDIO** | 本地AI助手集成 | 延迟最低、配置简单、安全性高 | 仅支持本地连接 | ⭐⭐⭐⭐⭐ |
+| **SSE** | Web应用、远程访问 | 支持多客户端、可远程访问 | 需要端口、略高延迟 | ⭐⭐⭐⭐ |
+| **HTTP** | 云部署、企业应用 | 现代协议、双向通信 | 配置复杂、需要端口 | ⭐⭐⭐ |
+
+**推荐选择**：
+- 🏠 **本地使用**：选择 **STDIO** 传输
+- 🌐 **远程访问**：选择 **SSE** 传输
+- ☁️ **云部署**：选择 **HTTP** 传输
+
+##### 🚀 快速启动示例
+
+```bash
+# STDIO 传输（本地AI助手）
+python mcp_server/start_mcp_server.py --transport stdio --auto
+
+# SSE 传输（远程访问，端口8000）
+python mcp_server/start_mcp_server.py --transport sse --port 8000 --auto
+
+# HTTP 传输（云部署，自定义端口）
+python mcp_server/start_mcp_server.py --transport http --host 0.0.0.0 --port 9000 --auto
+
+# 交互式启动（显示配置示例）
+python mcp_server/start_mcp_server.py --transport sse --port 8000
+
+# 查看帮助信息
+python mcp_server/start_mcp_server.py --help
+```
+
+> 💡 **提示**：`start_mcp_server.py` 是统一的启动入口，集成了依赖检查、配置示例显示、多传输方式支持等功能。推荐使用此脚本启动MCP服务器。
 
 #### 配置AI助手
 
-**对于Claude Desktop：**
+根据选择的传输方式，需要不同的配置方法：
 
-在Claude Desktop的配置文件中添加：
+##### 📋 STDIO 传输配置
+
+**Claude Desktop 配置**：
+
+打开 Claude Desktop → Settings → Developer → Edit Config，添加：
 
 ```json
 {
   "mcpServers": {
     "basic-web-crawler": {
       "command": "python",
-      "args": ["D:/myWorks/BasicWebCrawler/mcp_server.py"],
+      "args": ["D:/myWorks/BasicWebCrawler/mcp_server/mcp_server.py"],
       "cwd": "D:/myWorks/BasicWebCrawler"
     }
   }
 }
 ```
 
-**对于Cursor：**
+**Cursor 配置**：
 
 在 `~/.cursor/mcp.json` 文件中添加：
 
@@ -78,11 +207,58 @@ fastmcp run mcp_server.py
 {
   "mcpServers": {
     "basic-web-crawler": {
-      "command": "python",
-      "args": ["D:/myWorks/BasicWebCrawler/mcp_server.py"],
+      "command": "python", 
+      "args": ["D:/myWorks/BasicWebCrawler/mcp_server/mcp_server.py"],
       "cwd": "D:/myWorks/BasicWebCrawler"
     }
   }
+}
+```
+
+##### 🌐 SSE/HTTP 传输配置
+
+**Cherry Stuidio 配置**：
+
+```json
+{
+  "mcpServers": {
+    "basic-web-crawler": {
+      "type": "sse",
+      "url": "http://localhost:8000/sse"
+    }
+  }
+}
+```
+
+**HTTP 传输配置**：
+
+```json
+{
+  "mcpServers": {
+    "basic-web-crawler": {
+      "type": "streamableHttp",
+      "url": "http://localhost:9000/mcp"
+    }
+  }
+}
+```
+
+**使用 mcp-proxy 转换（SSE转STDIO）**：
+
+如果你的MCP服务器运行在SSE模式，但AI助手只支持STDIO，可以使用 `mcp-proxy`：
+
+```bash
+# 安装 mcp-proxy
+uv tool install mcp-proxy
+
+# Claude Desktop 配置
+{
+  "mcpServers": {
+      "basic-web-crawler": {
+         "command": "mcp-proxy",
+         "args": ["http://127.0.0.1:8000/sse"]
+      }
+   }
 }
 ```
 
