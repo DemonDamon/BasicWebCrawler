@@ -24,6 +24,25 @@ SITE_CONFIGS = {
         'main_content_selectors': ['div.Post-RichText', 'div.RichText', 'div.Post-content'],
         'needs_cookies': True
     },
+    'bilibili.com': {
+        'headers': {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Referer': 'https://www.bilibili.com',
+            'sec-ch-ua': '"Google Chrome";v="91", "Chromium";v="91"',
+        },
+        'main_content_selectors': ['.video-info-container', '.content-container', '.video-desc-container', '.player-wrapper'],
+        'needs_cookies': False
+    },
+    'aibase.com': {
+        'headers': {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Referer': 'https://www.aibase.com',
+        },
+        'main_content_selectors': ['.container', '.tool-container', '.content-wrapper', 'main', 'article'],
+        'needs_cookies': False
+    },
     'default': {
         'headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -175,6 +194,39 @@ def get_site_config(url):
             return config
     return SITE_CONFIGS['default']
 
+def extract_urls_from_text(text):
+    """
+    从文本中提取URL
+    
+    参数:
+    - text: 输入文本
+    
+    返回:
+    - 提取到的URL列表
+    """
+    # URL正则表达式模式，匹配http和https链接以及www开头的链接
+    # 使用更精确的模式，只匹配到空白字符或特定分隔符为止
+    url_pattern = r'(?:https?://|www\.)[^\s<>"\'，：；！？、]+'
+    
+    # 查找所有匹配
+    raw_urls = re.findall(url_pattern, text)
+    
+    normalized_urls = []
+    for url in raw_urls:
+        # 处理www前缀
+        if url.startswith('www.'):
+            url = 'https://' + url
+        
+        # 清理URL末尾的标点符号（但保留URL本身的有效字符）
+        # 移除常见的句末标点符号
+        url = re.sub(r'[,.:;!?，：；！？、]+$', '', url)
+        
+        # 确保URL不为空且格式正确
+        if url and (url.startswith('http://') or url.startswith('https://')):
+            normalized_urls.append(url)
+    
+    return normalized_urls
+
 def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None):
     """
     获取网页内容，下载图片，并转换为Markdown格式
@@ -260,17 +312,177 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None):
         print(f"处理网页时出错: {str(e)}")
         return None, "Error_Page"
 
+def process_url_text_mode(text, img_folder='images', cookies=None):
+    """
+    从文本中提取URL并爬取每个URL，然后合并结果到一个Markdown文件
+    
+    参数:
+    - text: 包含URL的文本
+    - img_folder: 图片保存文件夹
+    - cookies: 可选的cookies字典
+    
+    返回:
+    - 合并后的Markdown文档
+    - 爬取结果摘要
+    """
+    # 提取URL
+    urls = extract_urls_from_text(text)
+    
+    if not urls:
+        print("未在提供的文本中找到任何URL")
+        return None, "未找到URL"
+    
+    print(f"从文本中提取到 {len(urls)} 个URL:")
+    for i, url in enumerate(urls):
+        print(f"{i+1}. {url}")
+    
+    # 爬取结果
+    results = []
+    successful_urls = []
+    failed_urls = []
+    
+    # 爬取每个URL
+    for i, url in enumerate(urls):
+        print(f"\n开始爬取 URL {i+1}/{len(urls)}: {url}")
+        
+        start_time = time.time()
+        markdown_output, page_title = fetch_and_convert_to_markdown(url, img_folder, cookies)
+        end_time = time.time()
+        
+        if markdown_output:
+            results.append(markdown_output)
+            successful_urls.append(url)
+            print(f"成功爬取 {url}, 耗时: {end_time - start_time:.2f} 秒")
+        else:
+            failed_urls.append(url)
+            print(f"爬取失败: {url}")
+    
+    # 如果没有成功爬取任何URL，返回None
+    if not results:
+        return None, "所有URL爬取失败"
+    
+    # 合并结果
+    merged_content = "\n\n---\n\n".join(results)
+    
+    # 添加批量爬取摘要信息
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    summary = f"# 批量爬取结果\n\n爬取时间: {timestamp}\n\n"
+    summary += f"## 爬取摘要\n\n- 总计URL: {len(urls)}\n- 成功: {len(successful_urls)}\n- 失败: {len(failed_urls)}\n\n"
+    
+    if failed_urls:
+        summary += "## 爬取失败的URL\n\n"
+        for i, url in enumerate(failed_urls):
+            summary += f"{i+1}. {url}\n"
+        summary += "\n"
+    
+    # 最终文档
+    final_document = f"{summary}\n\n---\n\n{merged_content}"
+    
+    # 爬取结果摘要
+    result_summary = f"批量爬取完成: 共 {len(urls)} 个URL，成功 {len(successful_urls)} 个，失败 {len(failed_urls)} 个"
+    
+    return final_document, result_summary
+
 # 使用示例
 if __name__ == "__main__":
     try:
-        url = input("请输入网址: ")
-        print(f"开始爬取 {url} 的内容...")
+        print("BasicWebCrawler - 网页爬虫工具")
+        print("=" * 50)
+        print("1. 直接爬取单个URL")
+        print("2. 从文本中提取URL并批量爬取")
+        print("=" * 50)
         
-        # 检查是否需要cookies
-        site_config = get_site_config(url)
-        cookies = None
-        if site_config['needs_cookies']:
-            cookies_input = input("该网站可能需要cookies，请输入cookies文件路径（直接回车跳过）: ")
+        choice = input("请选择运行模式 (1/2): ").strip()
+        
+        if choice == "1":
+            # 单个URL模式
+            url = input("请输入网址: ")
+            print(f"开始爬取 {url} 的内容...")
+            
+            # 检查是否需要cookies
+            site_config = get_site_config(url)
+            cookies = None
+            if site_config['needs_cookies']:
+                cookies_input = input("该网站可能需要cookies，请输入cookies文件路径（直接回车跳过）: ")
+                if cookies_input.strip():
+                    try:
+                        with open(cookies_input, 'r') as f:
+                            cookies = json.load(f)
+                    except Exception as e:
+                        print(f"读取cookies文件失败: {str(e)}")
+                        print("将继续尝试不使用cookies进行爬取...")
+            
+            start_time = time.time()
+            markdown_output, page_title = fetch_and_convert_to_markdown(url, cookies=cookies)
+            end_time = time.time()
+            
+            if markdown_output:
+                # 使用网页标题作为文件名
+                sanitized_title = sanitize_filename(page_title)
+                if not sanitized_title:
+                    sanitized_title = "untitled_page"
+                
+                # 添加时间戳以避免文件名冲突
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                output_file = f"{sanitized_title}_{timestamp}.md"
+                
+                try:
+                    with open(output_file, 'w', encoding='utf-8') as f:
+                        f.write(markdown_output)
+                    
+                    print(f"内容已成功爬取并保存为 {output_file}")
+                    print(f"处理完成，耗时: {end_time - start_time:.2f} 秒")
+                    print(f"图片已保存在 './images/' 目录下")
+                except OSError as e:
+                    print(f"创建文件时出错: {str(e)}")
+                    fallback_filename = f"webpage_{timestamp}.md"
+                    with open(fallback_filename, 'w', encoding='utf-8') as f:
+                        f.write(markdown_output)
+                    print(f"已使用备用文件名保存内容: {fallback_filename}")
+            else:
+                print("爬取失败，请检查网址是否正确")
+        
+        elif choice == "2":
+            # 批量URL模式
+            print("请输入包含URL的文本:")
+            print("(每行输入完成后按回车，输入完所有内容后按Ctrl+Z然后回车结束输入)")
+            print("(Windows系统也可按Ctrl+D结束输入)")
+            print("=" * 50)
+            text_lines = []
+            
+            try:
+                line_num = 1
+                while True:
+                    try:
+                        line = input(f"第{line_num}行> ")
+                        text_lines.append(line)
+                        line_num += 1
+                        # 打印提示，表示已接收到输入
+                        if line.strip():
+                            print(f"已添加输入: {line}")
+                    except EOFError:
+                        # 捕获EOF
+                        print("\n输入结束，开始处理...")
+                        break
+            except KeyboardInterrupt:
+                # 捕获键盘中断
+                print("\n输入被中断")
+                if not text_lines:
+                    print("未输入任何文本，退出程序")
+                    exit(0)
+                print("将处理已输入的内容...")
+            
+            text = "\n".join(text_lines)
+            
+            if not text.strip():
+                print("未输入任何文本，退出程序")
+                exit(0)
+            
+            print("\n开始从文本中提取URL并爬取内容...")
+            
+            # 询问是否需要使用cookies
+            cookies = None
+            cookies_input = input("如果需要cookies，请输入cookies文件路径（直接回车跳过）: ")
             if cookies_input.strip():
                 try:
                     with open(cookies_input, 'r') as f:
@@ -278,36 +490,35 @@ if __name__ == "__main__":
                 except Exception as e:
                     print(f"读取cookies文件失败: {str(e)}")
                     print("将继续尝试不使用cookies进行爬取...")
-        
-        start_time = time.time()
-        markdown_output, page_title = fetch_and_convert_to_markdown(url, cookies=cookies)
-        end_time = time.time()
-        
-        if markdown_output:
-            # 使用网页标题作为文件名
-            sanitized_title = sanitize_filename(page_title)
-            if not sanitized_title:
-                sanitized_title = "untitled_page"
             
-            # 添加时间戳以避免文件名冲突
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            output_file = f"{sanitized_title}_{timestamp}.md"
+            start_time = time.time()
+            markdown_output, result_summary = process_url_text_mode(text, cookies=cookies)
+            end_time = time.time()
             
-            try:
-                with open(output_file, 'w', encoding='utf-8') as f:
-                    f.write(markdown_output)
+            if markdown_output:
+                # 创建输出文件名
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                output_file = f"批量爬取结果_{timestamp}.md"
                 
-                print(f"内容已成功爬取并保存为 {output_file}")
-                print(f"处理完成，耗时: {end_time - start_time:.2f} 秒")
-                print(f"图片已保存在 './images/' 目录下")
-            except OSError as e:
-                print(f"创建文件时出错: {str(e)}")
-                fallback_filename = f"webpage_{timestamp}.md"
-                with open(fallback_filename, 'w', encoding='utf-8') as f:
-                    f.write(markdown_output)
-                print(f"已使用备用文件名保存内容: {fallback_filename}")
+                try:
+                    with open(output_file, 'w', encoding='utf-8') as f:
+                        f.write(markdown_output)
+                    
+                    print(f"\n{result_summary}")
+                    print(f"内容已成功保存为 {output_file}")
+                    print(f"处理完成，总耗时: {end_time - start_time:.2f} 秒")
+                    print(f"图片已保存在 './images/' 目录下")
+                except OSError as e:
+                    print(f"创建文件时出错: {str(e)}")
+                    fallback_filename = f"批量爬取_{timestamp}.md"
+                    with open(fallback_filename, 'w', encoding='utf-8') as f:
+                        f.write(markdown_output)
+                    print(f"已使用备用文件名保存内容: {fallback_filename}")
+            else:
+                print("\n爬取失败，未能成功处理任何URL")
+        
         else:
-            print("爬取失败，请检查网址是否正确")
+            print("无效的选择，请选择1或2")
     
     except KeyboardInterrupt:
         print("\n程序已被用户中断")
