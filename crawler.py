@@ -1,5 +1,5 @@
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 import markdownify
 import os
 import urllib.parse
@@ -9,16 +9,43 @@ import hashlib
 import time
 import json
 import tempfile
+import contextlib
+import argparse
 try:
     import browser_cookie3
 except ImportError:
     browser_cookie3 = None
+
+# JS 渲染支持（可选）
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:
+    sync_playwright = None
 
 # 不需要下载的图片格式
 IGNORED_EXTENSIONS = ['.ico', '.webp', '.svg', '.gif', '.bmp', '.tiff']
 
 # 网站特定配置
 SITE_CONFIGS = {
+    'mineru.net': {
+        'headers': {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.8,zh-CN;q=0.6',
+            'Referer': 'https://mineru.net/',
+        },
+        # 常见的文档站（VitePress/VuePress/Docusaurus）内容区选择器
+        'main_content_selectors': [
+            'main',
+            '.theme-default-content',
+            '.content__default',
+            '.theme-container .page .content',
+            'div.VPDoc .VPDocContent',
+            '#app',
+        ],
+        'wait_selectors': ['.theme-default-content', '.content__default', 'main'],
+        'needs_cookies': False,
+        'needs_js': True,
+    },
     'zhihu.com': {
         'headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -57,6 +84,74 @@ SITE_CONFIGS = {
         'needs_cookies': False
     }
 }
+
+def should_render_with_js(url, soup, response_text):
+    """
+    判断是否需要使用JS渲染：
+    - 站点被标记为需要JS（如 mineru.net）
+    - HTML过于稀薄或包含典型的SPA占位元素（#app、#root）
+    """
+    domain = urlparse(url).netloc
+    site_conf = None
+    for site_domain, conf in SITE_CONFIGS.items():
+        if site_domain in domain:
+            site_conf = conf
+            break
+
+    if site_conf and site_conf.get('needs_js'):
+        return True
+
+    # 内容很少且存在SPA占位符，或明显的VitePress/VuePress构建标识
+    text_len = len(response_text or '')
+    if text_len < 3000:
+        if soup.select_one('#app') or soup.select_one('#root'):
+            return True
+        # Vite/VitePress 的常见关键字
+        if 'vite' in (response_text or '').lower() or 'vitepress' in (response_text or '').lower():
+            return True
+
+    return False
+
+def render_page_with_playwright(url, headers=None, cookies=None, wait_selectors=None, timeout_ms=15000):
+    """
+    使用 Playwright 渲染页面并返回完整的HTML。
+    - headers 会作为额外请求头设置
+    - cookies 可用于需要登录的站点
+    - wait_selectors 若提供，将等待其中任一选择器出现后再返回内容
+    """
+    if sync_playwright is None:
+        return None
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context()
+
+            if headers:
+                context.set_extra_http_headers(headers)
+
+            # 可选：添加 cookies（需要符合 Playwright cookie 结构）
+            if cookies:
+                with contextlib.suppress(Exception):
+                    context.add_cookies(cookies)
+
+            page = context.new_page()
+            page.goto(url, wait_until='networkidle')
+
+            # 如果提供了等待选择器，等待其中之一出现
+            if wait_selectors:
+                for sel in wait_selectors:
+                    with contextlib.suppress(Exception):
+                        page.wait_for_selector(sel, timeout=timeout_ms)
+                        break
+
+            content = page.content()
+            context.close()
+            browser.close()
+            return content
+    except Exception as e:
+        print(f"Playwright 渲染失败: {e}")
+        return None
 
 def sanitize_filename(filename):
     """
@@ -232,7 +327,7 @@ def extract_urls_from_text(text):
     
     return normalized_urls
 
-def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None):
+def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor_strategy='section', js_mode='auto', wait_selectors_override=None):
     """
     获取网页内容，下载图片，并转换为Markdown格式
     
@@ -251,7 +346,7 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None):
         
         # 准备请求头
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
             'Cache-Control': 'max-age=0'
@@ -263,17 +358,29 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None):
         if site_config['needs_cookies'] and not cookies:
             print(f"警告: 该网站({urlparse(url).netloc})可能需要cookies才能正常访问")
         
-        # 发送请求获取网页内容
-        response = requests.get(url, headers=headers, cookies=cookies, timeout=30)
-        
-        # 检查请求是否成功
-        if response.status_code != 200:
-            print(f"Error fetching {url}: {response.status_code}")
-            return None, None
-        
-        # 解析网页内容
+        # 发送请求获取网页内容（初次尝试）
+        response = requests.get(url, headers=headers, cookies=cookies, timeout=20)
+        response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
-        
+    
+        # JS 渲染策略
+        site_conf = get_site_config(url)
+        wait_selectors = site_conf.get('wait_selectors') if isinstance(site_conf, dict) else None
+        if wait_selectors_override:
+            wait_selectors = wait_selectors_override
+    
+        if js_mode == 'on':
+            use_js = True
+        elif js_mode == 'off':
+            use_js = False
+        else:
+            use_js = should_render_with_js(url, soup, response.text)
+    
+        if use_js:
+            rendered_html = render_page_with_playwright(url, headers=headers, cookies=cookies, wait_selectors=wait_selectors)
+            if rendered_html:
+                soup = BeautifulSoup(rendered_html, 'html.parser')
+    
         # 提取网页标题
         title = soup.title.string if soup.title else 'Untitled Page'
         if title is None:
@@ -295,12 +402,41 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None):
             if content:
                 main_content = content
                 break
-        
+
         # 如果没有找到主要内容区域，则使用body
         if not main_content:
             main_content = soup.find('body')
             if not main_content:
                 main_content = soup
+
+        # 处理URL中的锚点（fragment），例如 #single-file-parsing
+        fragment = urlparse(url).fragment
+        if fragment and anchor_strategy != 'full':
+            anchor_el = soup.find(id=fragment)
+            if not anchor_el:
+                # 有些站点将 fragment 存在 name 或 data-id 上
+                anchor_el = soup.find(attrs={'name': fragment}) or soup.find(attrs={'data-id': fragment})
+            if anchor_el:
+                title_el = anchor_el
+                # 如果锚点在标题内部，如 <a id="..."> 放在 <h2>内
+                if anchor_el.name == 'a' and anchor_el.parent and anchor_el.parent.name in ['h1','h2','h3','h4','h5','h6']:
+                    title_el = anchor_el.parent
+                heading_level = 1
+                if title_el.name and title_el.name.startswith('h') and title_el.name[1:].isdigit():
+                    heading_level = int(title_el.name[1:])
+                # 收集后续兄弟节点，直到遇到同级或更高的标题
+                siblings_to_move = []
+                for sib in title_el.next_siblings:
+                    if getattr(sib, 'name', None) in ['h1','h2','h3','h4','h5','h6']:
+                        sib_level = int(sib.name[1:]) if sib.name and sib.name[1:].isdigit() else 7
+                        if sib_level <= heading_level:
+                            break
+                    siblings_to_move.append(sib)
+                section_container = soup.new_tag('div')
+                section_container.append(title_el)
+                for sib in siblings_to_move:
+                    section_container.append(sib)
+                main_content = section_container
         
         # 将内容转换为Markdown格式
         markdown_content = markdownify.markdownify(str(main_content), heading_style="ATX")
@@ -390,6 +526,37 @@ def process_url_text_mode(text, img_folder='images', cookies=None):
 
 # 使用示例
 if __name__ == "__main__":
+    # CLI 快捷模式：支持直接通过命令行参数抓取并退出
+    try:
+        _parser = argparse.ArgumentParser(add_help=False)
+        _parser.add_argument("--url", "-u")
+        _parser.add_argument("--out", "-o")
+        _parser.add_argument("--anchor", choices=["section","full"], default="section")
+        _parser.add_argument("--js", choices=["auto","on","off"], default="auto")
+        _parser.add_argument("--wait", nargs="*")
+        _known, _ = _parser.parse_known_args()
+        if _known.url:
+            md, title = fetch_and_convert_to_markdown(
+                _known.url,
+                anchor_strategy=("full" if _known.anchor == "full" else "section"),
+                js_mode=_known.js,
+                wait_selectors_override=_known.wait,
+            )
+            if md:
+                # 使用标题生成默认文件名
+                default_name = f"{sanitize_filename(title)}_{time.strftime('%Y%m%d_%H%M%S')}.md"
+                out_path = _known.out or default_name
+                with open(out_path, "w", encoding="utf-8") as f:
+                    f.write(md)
+                print(f"内容已成功爬取并保存为 {out_path}")
+                raise SystemExit(0)
+            else:
+                print("爬取失败，请检查网址或稍后重试")
+                raise SystemExit(2)
+    except Exception:
+        # 保持与原交互模式兼容；如未传入参数或解析失败，继续原流程
+        pass
+
     try:
         print("BasicWebCrawler - 网页爬虫工具")
         print("=" * 50)

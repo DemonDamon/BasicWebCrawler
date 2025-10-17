@@ -69,6 +69,19 @@ BasicWebCrawler/
    pip install requests beautifulsoup4 markdownify fastmcp
    ```
 
+### 🔧（可选）启用JS渲染以抓取SPA文档站
+
+部分文档网站（如 `mineru.net`）采用单页应用（SPA）架构，主要内容通过JavaScript在客户端渲染。为确保可以抓取完整内容，建议安装 Playwright：
+
+```bash
+pip install playwright
+playwright install
+```
+
+安装后，爬虫会在检测到页面需要JS渲染时自动使用Playwright获取完整HTML（无需额外配置）。如果未安装Playwright，爬虫会输出提示并退回到未渲染的HTML进行提取，可能导致内容不完整。
+
+另外，爬虫已支持处理URL中的锚点（如 `#single-file-parsing`），会尽量抽取对应标题下的段落内容。
+
 ## 使用方法
 
 ### 🤖 MCP服务器模式（推荐）
@@ -340,6 +353,35 @@ https://www.stackoverflow.com
 这是一个介绍文章，里面有几个链接：https://www.example.com 和 https://blog.example.org
 还有一些其他网站 www.another-example.net
 ```
+
+#### CLI 快捷模式（非交互）
+
+支持通过命令行参数直接抓取，无需交互：
+
+可用参数：
+- `--url, -u` 目标链接
+- `--out, -o` 输出文件路径
+- `--anchor` `section|full` 控制锚点策略；`full` 抓取整页
+- `--js` `auto|on|off` JS渲染策略；`on` 强制使用 Playwright
+- `--wait` 可选，传入一个或多个 CSS 选择器，等待元素渲染
+
+示例：
+- 整页抓取（推荐）：
+```bash
+python3 BasicWebCrawler/crawler.py -u "https://mineru.net/doc/docs/index_en.html?theme=dark&v=1.0#single-file-parsing" --js on --anchor full --wait .theme-default-content .content__default main -o BasicWebCrawler/mineru_full_cli.md
+```
+- 单章节抓取（从 `#fragment` 标题到下一个同级标题）：
+```bash
+python3 BasicWebCrawler/crawler.py -u "https://mineru.net/doc/docs/index_en.html?theme=dark&v=1.0#single-file-parsing" --js on --anchor section -o BasicWebCrawler/mineru_section_cli.md
+```
+
+#### Mineru 文档站适配与解析改进
+
+- 站点配置：为 `mineru.net` 增加选择器 `['main', '.theme-default-content', '.content__default', '.theme-container .page .content', 'div.VPDoc .VPDocContent', '#app']`，并设置 `wait_selectors` 以确保 JS 完成渲染。
+- JS 渲染：新增 Playwright 回退；可通过 `--js on` 强制启用，或 `--js auto` 自动判断。
+- 锚点解析：增强章节抽取策略，只在遇到“同级或更高层级标题”时停止收集，避免只输出标题。
+- 效果验证：对链接 `https://mineru.net/doc/docs/index_en.html?theme=dark&v=1.0#single-file-parsing` 使用整页抓取，产出约 `589` 行 Markdown，相比此前约 `100` 行显著提升。
+- 清理：已移除临时脚本 `run_once.py`，统一使用 `crawler.py` 的 CLI 模式。
 
 #### 爬取需要登录的网站（如知乎）
 
