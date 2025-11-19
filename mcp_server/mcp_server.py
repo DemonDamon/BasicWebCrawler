@@ -27,6 +27,9 @@ from fastmcp import FastMCP
 from crawler import (
     fetch_and_convert_to_markdown,
     process_url_text_mode,
+    convert_html_to_markdown,
+    render_with_actions,
+    render_with_actions_threaded,
     extract_urls_from_text,
     get_site_config,
     sanitize_filename
@@ -355,8 +358,73 @@ def batch_crawl_prompt(text_content: str):
     return prompt_text
 
 def main():
-    """运行MCP服务器"""
     mcp.run()
+
+@mcp.tool()
+def interactive_crawl(
+    url: str,
+    actions: List[Dict],
+    img_folder: str = "images",
+    output_dir: Optional[str] = None,
+    use_cookies: bool = False,
+    cookies_file: Optional[str] = None,
+    headers: Optional[Dict] = None,
+    headless: bool = False,
+    timeout_ms: int = 15000
+) -> str:
+    try:
+        cookies = None
+        if use_cookies and cookies_file and os.path.exists(cookies_file):
+            try:
+                with open(cookies_file, 'r', encoding='utf-8') as f:
+                    cookies = json.load(f)
+            except Exception as e:
+                return f"读取cookies文件失败: {str(e)}"
+        site_conf = get_site_config(url)
+        merged_headers = {}
+        merged_headers.update(site_conf.get('headers', {}))
+        if headers:
+            merged_headers.update(headers)
+        project_root = Path(__file__).parent.parent
+        target_dir = Path(output_dir).resolve() if output_dir else project_root
+        target_dir.mkdir(parents=True, exist_ok=True)
+        img_dir = str(target_dir / img_folder)
+        old_cwd = os.getcwd()
+        os.chdir(str(target_dir))
+        try:
+            with redirect_stdout(sys.stderr):
+                start_time = time.time()
+                rendered_html = render_with_actions_threaded(url, actions, headers=merged_headers, cookies=cookies, headless=headless, timeout_ms=timeout_ms)
+                if not rendered_html:
+                    return "❌ 交互失败或无法获取页面内容"
+                markdown_output, page_title = convert_html_to_markdown(rendered_html, url, img_dir)
+                end_time = time.time()
+        finally:
+            os.chdir(old_cwd)
+        if markdown_output:
+            sanitized_title = sanitize_filename(page_title)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            output_file = f"{sanitized_title}_{timestamp}.md"
+            try:
+                output_path = target_dir / output_file
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(markdown_output)
+                return f"✅ 交互+抓取成功！\n\n" \
+                       f"📄 页面标题: {page_title}\n" \
+                       f"🔗 URL: {url}\n" \
+                       f"📁 保存文件: {output_path}\n" \
+                       f"🖼️ 图片目录: {img_dir}/\n" \
+                       f"⏱️ 耗时: {end_time - start_time:.2f} 秒"
+            except OSError:
+                fallback_filename = f"interactive_{timestamp}.md"
+                fallback_path = target_dir / fallback_filename
+                with open(fallback_path, 'w', encoding='utf-8') as f:
+                    f.write(markdown_output)
+                return f"✅ 交互+抓取成功（使用备用文件名）！\n文件: {fallback_filename}"
+        else:
+            return "❌ 转换失败: 未生成Markdown内容"
+    except Exception as e:
+        return f"❌ 交互过程中发生错误: {str(e)}"
 
 if __name__ == "__main__":
     main()
