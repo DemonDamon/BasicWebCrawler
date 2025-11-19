@@ -18,6 +18,7 @@ import tempfile
 from typing import Dict, List, Optional, Any
 from urllib.parse import urlparse
 from pathlib import Path
+from contextlib import redirect_stdout
 
 # 添加父目录到Python路径，以便导入crawler模块
 sys.path.append(str(Path(__file__).parent.parent))
@@ -39,7 +40,8 @@ def crawl_single_url(
     url: str,
     img_folder: str = "images",
     use_cookies: bool = False,
-    cookies_file: Optional[str] = None
+    cookies_file: Optional[str] = None,
+    output_dir: Optional[str] = None
 ) -> str:
     """
     爬取单个网页并转换为Markdown格式
@@ -68,39 +70,40 @@ def crawl_single_url(
         if site_config['needs_cookies'] and not cookies:
             return f"警告: 网站 {urlparse(url).netloc} 可能需要cookies才能正常访问。建议使用cookies参数。"
         
-        # 开始爬取
-        start_time = time.time()
-        markdown_output, page_title = fetch_and_convert_to_markdown(url, img_folder, cookies)
-        end_time = time.time()
+        project_root = Path(__file__).parent.parent
+        target_dir = Path(output_dir).resolve() if output_dir else project_root
+        target_dir.mkdir(parents=True, exist_ok=True)
+        img_dir = str(target_dir / img_folder)
+        old_cwd = os.getcwd()
+        os.chdir(str(target_dir))
+        try:
+            with redirect_stdout(sys.stderr):
+                start_time = time.time()
+                markdown_output, page_title = fetch_and_convert_to_markdown(url, img_dir, cookies)
+                end_time = time.time()
+        finally:
+            os.chdir(old_cwd)
         
         if markdown_output:
-            # 生成文件名
             sanitized_title = sanitize_filename(page_title)
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             output_file = f"{sanitized_title}_{timestamp}.md"
-            
-            # 保存文件到项目根目录
             try:
-                # 获取项目根目录路径
-                project_root = Path(__file__).parent.parent
-                output_path = project_root / output_file
-                
+                output_path = target_dir / output_file
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(markdown_output)
-                
                 return f"✅ 爬取成功！\n\n" \
                        f"📄 页面标题: {page_title}\n" \
                        f"🔗 URL: {url}\n" \
-                       f"📁 保存文件: {output_file}\n" \
-                       f"🖼️ 图片目录: {img_folder}/\n" \
+                       f"📁 保存文件: {output_path}\n" \
+                       f"🖼️ 图片目录: {img_dir}/\n" \
                        f"⏱️ 耗时: {end_time - start_time:.2f} 秒\n\n" \
                        f"内容预览:\n{markdown_output[:500]}..."
                        
             except OSError as e:
                 # 使用备用文件名
                 fallback_filename = f"webpage_{timestamp}.md"
-                project_root = Path(__file__).parent.parent
-                fallback_path = project_root / fallback_filename
+                fallback_path = target_dir / fallback_filename
                 with open(fallback_path, 'w', encoding='utf-8') as f:
                     f.write(markdown_output)
                 return f"✅ 爬取成功（使用备用文件名）！\n文件: {fallback_filename}\n耗时: {end_time - start_time:.2f} 秒"
@@ -115,7 +118,8 @@ def crawl_urls_from_text(
     text: str,
     img_folder: str = "images",
     use_cookies: bool = False,
-    cookies_file: Optional[str] = None
+    cookies_file: Optional[str] = None,
+    output_dir: Optional[str] = None
 ) -> str:
     """
     从文本中提取URL并批量爬取
@@ -144,36 +148,38 @@ def crawl_urls_from_text(
         if not urls:
             return "❌ 未在提供的文本中找到任何有效的URL"
         
-        # 开始批量爬取
-        start_time = time.time()
-        markdown_output, result_summary = process_url_text_mode(text, img_folder, cookies)
-        end_time = time.time()
+        project_root = Path(__file__).parent.parent
+        target_dir = Path(output_dir).resolve() if output_dir else project_root
+        target_dir.mkdir(parents=True, exist_ok=True)
+        img_dir = str(target_dir / img_folder)
+        old_cwd = os.getcwd()
+        os.chdir(str(target_dir))
+        try:
+            with redirect_stdout(sys.stderr):
+                start_time = time.time()
+                markdown_output, result_summary = process_url_text_mode(text, img_dir, cookies)
+                end_time = time.time()
+        finally:
+            os.chdir(old_cwd)
         
         if markdown_output:
             # 生成文件名
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             output_file = f"批量爬取结果_{timestamp}.md"
-            
-            # 保存文件到项目根目录
             try:
-                # 获取项目根目录路径
-                project_root = Path(__file__).parent.parent
-                output_path = project_root / output_file
-                
+                output_path = target_dir / output_file
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(markdown_output)
-                
                 return f"✅ 批量爬取完成！\n\n" \
                        f"📊 {result_summary}\n" \
-                       f"📁 保存文件: {output_file}\n" \
-                       f"🖼️ 图片目录: {img_folder}/\n" \
+                       f"📁 保存文件: {output_path}\n" \
+                       f"🖼️ 图片目录: {img_dir}/\n" \
                        f"⏱️ 总耗时: {end_time - start_time:.2f} 秒\n\n" \
                        f"发现的URL:\n" + "\n".join([f"• {url}" for url in urls])
                        
             except OSError as e:
                 fallback_filename = f"批量爬取_{timestamp}.md"
-                project_root = Path(__file__).parent.parent
-                fallback_path = project_root / fallback_filename
+                fallback_path = target_dir / fallback_filename
                 with open(fallback_path, 'w', encoding='utf-8') as f:
                     f.write(markdown_output)
                 return f"✅ 批量爬取完成（使用备用文件名）！\n文件: {fallback_filename}"
@@ -353,4 +359,4 @@ def main():
     mcp.run()
 
 if __name__ == "__main__":
-    main() 
+    main()
