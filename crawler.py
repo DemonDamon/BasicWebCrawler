@@ -11,6 +11,8 @@ import json
 import tempfile
 import contextlib
 import argparse
+import threading
+import queue
 try:
     import browser_cookie3
 except ImportError:
@@ -452,6 +454,222 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
     except Exception as e:
         print(f"处理网页时出错: {str(e)}")
         return None, "Error_Page"
+
+def convert_html_to_markdown(html, url, img_folder='images'):
+    try:
+        if not os.path.exists(img_folder):
+            os.makedirs(img_folder)
+        soup = BeautifulSoup(html, 'html.parser')
+        title = soup.title.string if soup.title else 'Untitled Page'
+        if title is None:
+            title = 'Untitled Page'
+        soup = process_images(soup, url, img_folder)
+        for element in soup.select('script, style, iframe, nav, footer, .sidebar, .advertisement, .ads'):
+            element.decompose()
+        site_config = get_site_config(url)
+        main_content = None
+        for selector in site_config['main_content_selectors']:
+            content = soup.select_one(selector)
+            if content:
+                main_content = content
+                break
+        if not main_content:
+            main_content = soup.find('body')
+            if not main_content:
+                main_content = soup
+        markdown_content = markdownify.markdownify(str(main_content), heading_style="ATX")
+        markdown_content = replace_md_image_urls(markdown_content, url, img_folder)
+        markdown_document = f"# {title}\n\n原文链接: {url}\n\n{markdown_content}"
+        return markdown_document, title
+    except Exception as e:
+        print(f"处理HTML时出错: {str(e)}")
+        return None, "Error_Page"
+
+def render_with_actions(url, actions, headers=None, cookies=None, headless=False, channel="chrome", timeout_ms=15000):
+    if sync_playwright is None:
+        return None
+    try:
+        with sync_playwright() as p:
+            browser = None
+            try:
+                browser = p.chromium.launch(headless=headless, channel=channel)
+            except Exception:
+                browser = p.chromium.launch(headless=headless)
+            context = browser.new_context()
+            if headers:
+                context.set_extra_http_headers(headers)
+            if cookies:
+                with contextlib.suppress(Exception):
+                    context.add_cookies(cookies)
+            page = context.new_page()
+            page.goto(url, wait_until='networkidle')
+            for act in actions or []:
+                t = (act or {}).get('type')
+                if t == 'goto':
+                    u = act.get('url') or url
+                    wu = act.get('waitUntil') or 'networkidle'
+                    with contextlib.suppress(Exception):
+                        page.goto(u, wait_until=wu)
+                elif t == 'wait':
+                    sels = act.get('selectors') or []
+                    to = act.get('timeoutMs') or timeout_ms
+                    for sel in sels:
+                        with contextlib.suppress(Exception):
+                            page.wait_for_selector(sel, timeout=to)
+                            break
+                elif t == 'click':
+                    sel = act.get('selector')
+                    if sel:
+                        with contextlib.suppress(Exception):
+                            page.click(sel)
+                elif t == 'type':
+                    sel = act.get('selector')
+                    txt = act.get('text') or ''
+                    delay = act.get('delayMs') or 0
+                    submit = bool(act.get('submit'))
+                    if sel:
+                        with contextlib.suppress(Exception):
+                            page.fill(sel, '')
+                            page.type(sel, txt, delay=delay)
+                            if submit:
+                                page.keyboard.press('Enter')
+                elif t == 'scroll':
+                    dest = act.get('to')
+                    val = act.get('value')
+                    if dest == 'top':
+                        page.evaluate('window.scrollTo(0, 0)')
+                    elif dest == 'bottom':
+                        page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    elif dest == 'y' and isinstance(val, int):
+                        page.evaluate(f'window.scrollTo(0, {val})')
+                elif t == 'sleep':
+                    ms = act.get('ms') or 0
+                    if ms > 0:
+                        page.wait_for_timeout(ms)
+                elif t == 'screenshot':
+                    path = act.get('path')
+                    full = bool(act.get('fullPage')) if act.get('fullPage') is not None else True
+                    with contextlib.suppress(Exception):
+                        if path:
+                            page.screenshot(path=path, full_page=full)
+                        else:
+                            page.screenshot(full_page=full)
+                elif t == 'evaluate':
+                    script = act.get('script') or ''
+                    if script:
+                        with contextlib.suppress(Exception):
+                            page.evaluate(script)
+            content = page.content()
+            context.close()
+            browser.close()
+            return content
+    except Exception as e:
+        print(f"Playwright 交互失败: {e}")
+        return None
+
+async def _async_render_with_actions(url, actions, headers=None, cookies=None, headless=False, channel="chrome", timeout_ms=15000):
+    try:
+        from playwright.async_api import async_playwright
+    except Exception:
+        return None
+    try:
+        async with async_playwright() as p:
+            browser = None
+            try:
+                browser = await p.chromium.launch(headless=headless, channel=channel)
+            except Exception:
+                browser = await p.chromium.launch(headless=headless)
+            context = await browser.new_context()
+            if headers:
+                await context.set_extra_http_headers(headers)
+            if cookies:
+                with contextlib.suppress(Exception):
+                    await context.add_cookies(cookies)
+            page = await context.new_page()
+            await page.goto(url, wait_until='networkidle')
+            for act in actions or []:
+                t = (act or {}).get('type')
+                if t == 'goto':
+                    u = act.get('url') or url
+                    wu = act.get('waitUntil') or 'networkidle'
+                    with contextlib.suppress(Exception):
+                        await page.goto(u, wait_until=wu)
+                elif t == 'wait':
+                    sels = act.get('selectors') or []
+                    to = act.get('timeoutMs') or timeout_ms
+                    for sel in sels:
+                        with contextlib.suppress(Exception):
+                            await page.wait_for_selector(sel, timeout=to)
+                            break
+                elif t == 'click':
+                    sel = act.get('selector')
+                    if sel:
+                        with contextlib.suppress(Exception):
+                            await page.click(sel)
+                elif t == 'type':
+                    sel = act.get('selector')
+                    txt = act.get('text') or ''
+                    delay = act.get('delayMs') or 0
+                    submit = bool(act.get('submit'))
+                    if sel:
+                        with contextlib.suppress(Exception):
+                            await page.fill(sel, '')
+                            if delay:
+                                await page.type(sel, txt, delay=delay)
+                            else:
+                                await page.type(sel, txt)
+                            if submit:
+                                await page.keyboard.press('Enter')
+                elif t == 'scroll':
+                    dest = act.get('to')
+                    val = act.get('value')
+                    if dest == 'top':
+                        await page.evaluate('window.scrollTo(0, 0)')
+                    elif dest == 'bottom':
+                        await page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    elif dest == 'y' and isinstance(val, int):
+                        await page.evaluate(f'window.scrollTo(0, {val})')
+                elif t == 'sleep':
+                    ms = act.get('ms') or 0
+                    if ms > 0:
+                        await page.wait_for_timeout(ms)
+                elif t == 'screenshot':
+                    path = act.get('path')
+                    full = bool(act.get('fullPage')) if act.get('fullPage') is not None else True
+                    with contextlib.suppress(Exception):
+                        if path:
+                            await page.screenshot(path=path, full_page=full)
+                        else:
+                            await page.screenshot(full_page=full)
+                elif t == 'evaluate':
+                    script = act.get('script') or ''
+                    if script:
+                        with contextlib.suppress(Exception):
+                            await page.evaluate(script)
+            content = await page.content()
+            await context.close()
+            await browser.close()
+            return content
+    except Exception as e:
+        print(f"Playwright 异步交互失败: {e}")
+        return None
+
+def render_with_actions_threaded(url, actions, headers=None, cookies=None, headless=False, channel="chrome", timeout_ms=15000):
+    q = queue.Queue()
+    def worker():
+        try:
+            import asyncio as _asyncio
+            result = _asyncio.run(_async_render_with_actions(url, actions, headers, cookies, headless, channel, timeout_ms))
+            q.put(result)
+        except Exception as e:
+            q.put(None)
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join()
+    try:
+        return q.get_nowait()
+    except Exception:
+        return None
 
 def process_url_text_mode(text, img_folder='images', cookies=None):
     """
