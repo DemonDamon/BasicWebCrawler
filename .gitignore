@@ -41,6 +41,7 @@ output/
 # Logs
 *.log
 logs/
+thirdparty/
 
 # Local development settings
 .env.local
