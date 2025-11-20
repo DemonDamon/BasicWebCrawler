@@ -59,6 +59,14 @@ def crawl_single_url(
         包含爬取结果信息的字符串
     """
     try:
+        # 自动检测项目根目录下的cookies文件
+        if not cookies_file:
+            project_root = Path(__file__).parent.parent
+            default_cookies = project_root / 'zhihu_cookies.json'
+            if default_cookies.exists():
+                cookies_file = str(default_cookies)
+                use_cookies = True
+
         # 处理cookies
         cookies = None
         if use_cookies and cookies_file and os.path.exists(cookies_file):
@@ -137,6 +145,14 @@ def crawl_urls_from_text(
         包含批量爬取结果的字符串
     """
     try:
+        # 自动检测项目根目录下的cookies文件
+        if not cookies_file:
+            project_root = Path(__file__).parent.parent
+            default_cookies = project_root / 'zhihu_cookies.json'
+            if default_cookies.exists():
+                cookies_file = str(default_cookies)
+                use_cookies = True
+
         # 处理cookies
         cookies = None
         if use_cookies and cookies_file and os.path.exists(cookies_file):
@@ -373,6 +389,14 @@ def interactive_crawl(
     timeout_ms: int = 15000
 ) -> str:
     try:
+        # 自动检测项目根目录下的cookies文件
+        if not cookies_file:
+            project_root = Path(__file__).parent.parent
+            default_cookies = project_root / 'zhihu_cookies.json'
+            if default_cookies.exists():
+                cookies_file = str(default_cookies)
+                use_cookies = True
+
         cookies = None
         if use_cookies and cookies_file and os.path.exists(cookies_file):
             try:
