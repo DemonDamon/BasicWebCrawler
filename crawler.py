@@ -56,7 +56,8 @@ SITE_CONFIGS = {
             'sec-ch-ua': '"Google Chrome";v="91", "Chromium";v="91"',
         },
         'main_content_selectors': ['div.Post-RichText', 'div.RichText', 'div.Post-content'],
-        'needs_cookies': True
+        'needs_cookies': True,
+        'needs_js': True
     },
     'bilibili.com': {
         'headers': {
@@ -126,8 +127,20 @@ def render_page_with_playwright(url, headers=None, cookies=None, wait_selectors=
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--disable-blink-features=AutomationControlled']
+            )
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+            
+            # 注入反检测脚本
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            """)
 
             if headers:
                 context.set_extra_http_headers(headers)
@@ -360,11 +373,6 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
         if site_config['needs_cookies'] and not cookies:
             print(f"警告: 该网站({urlparse(url).netloc})可能需要cookies才能正常访问")
         
-        # 发送请求获取网页内容（初次尝试）
-        response = requests.get(url, headers=headers, cookies=cookies, timeout=20)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-    
         # JS 渲染策略
         site_conf = get_site_config(url)
         wait_selectors = site_conf.get('wait_selectors') if isinstance(site_conf, dict) else None
@@ -376,13 +384,45 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
         elif js_mode == 'off':
             use_js = False
         else:
-            use_js = should_render_with_js(url, soup, response.text)
-    
+            # 如果配置明确要求JS，直接标记为True
+            if site_conf and site_conf.get('needs_js'):
+                use_js = True
+            else:
+                # 否则暂时设为False，稍后根据内容判断
+                use_js = False
+
+        soup = None
+        response_text = None
+
+        # 如果不需要强制JS，或者需要先获取内容来判断是否需要JS
+        if not use_js:
+            try:
+                # 发送请求获取网页内容（初次尝试）
+                response = requests.get(url, headers=headers, cookies=cookies, timeout=20)
+                response.raise_for_status()
+                response.encoding = response.apparent_encoding
+                response_text = response.text
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                # 再次检查是否需要JS（基于内容）
+                if js_mode == 'auto' and should_render_with_js(url, soup, response_text):
+                    use_js = True
+            except Exception as e:
+                print(f"Requests请求失败，尝试使用Playwright: {e}")
+                use_js = True
+
         if use_js:
+            print("使用Playwright渲染页面...")
             rendered_html = render_page_with_playwright(url, headers=headers, cookies=cookies, wait_selectors=wait_selectors)
             if rendered_html:
                 soup = BeautifulSoup(rendered_html, 'html.parser')
+            else:
+                if soup is None:
+                    raise Exception("无法获取网页内容 (Playwright和Requests均失败)")
     
+        if not soup:
+             raise Exception("无法解析网页内容")
+
         # 提取网页标题
         title = soup.title.string if soup.title else 'Untitled Page'
         if title is None:
@@ -576,10 +616,27 @@ async def _async_render_with_actions(url, actions, headers=None, cookies=None, h
         async with async_playwright() as p:
             browser = None
             try:
-                browser = await p.chromium.launch(headless=headless, channel=channel)
+                browser = await p.chromium.launch(
+                    headless=headless, 
+                    channel=channel,
+                    args=['--disable-blink-features=AutomationControlled']
+                )
             except Exception:
-                browser = await p.chromium.launch(headless=headless)
-            context = await browser.new_context()
+                browser = await p.chromium.launch(
+                    headless=headless,
+                    args=['--disable-blink-features=AutomationControlled']
+                )
+            context = await browser.new_context(
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            )
+            
+            # 注入反检测脚本
+            await context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            """)
+            
             if headers:
                 await context.set_extra_http_headers(headers)
             if cookies:
