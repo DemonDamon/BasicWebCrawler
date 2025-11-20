@@ -78,6 +78,25 @@ SITE_CONFIGS = {
         'main_content_selectors': ['.container', '.tool-container', '.content-wrapper', 'main', 'article'],
         'needs_cookies': False
     },
+    'ragas.org.cn': {
+        'headers': {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Referer': 'https://docs.ragas.org.cn/',
+        },
+        # Material for MkDocs 内容选择器
+        'main_content_selectors': [
+            'main article',
+            'main .md-content',
+            'main .md-content__inner',
+            '.md-content',
+            'article',
+            'main'
+        ],
+        'needs_cookies': False,
+        'needs_js': True,  # Material for MkDocs 可能需要JS渲染
+        'wait_selectors': ['main article', '.md-content', 'main']
+    },
     'default': {
         'headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -452,6 +471,12 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
                 main_content = soup
 
         # 处理URL中的锚点（fragment），例如 #single-file-parsing
+        # 对于文档站点（如 ragas.org.cn），默认使用完整页面模式
+        domain = urlparse(url).netloc
+        is_doc_site = 'ragas.org.cn' in domain or 'docs.' in domain
+        if is_doc_site and anchor_strategy == 'section':
+            anchor_strategy = 'full'
+        
         fragment = urlparse(url).fragment
         if fragment and anchor_strategy != 'full':
             anchor_el = soup.find(id=fragment)
