@@ -18,24 +18,44 @@ def check_dependencies():
         'fastmcp': 'fastmcp',
         'requests': 'requests', 
         'beautifulsoup4': 'bs4',
-        'markdownify': 'markdownify'
+        'markdownify': 'markdownify',
+        'openai': 'openai',           # 大模型客户端
+        'python-dotenv': 'dotenv'      # 环境变量加载
     }
     
     missing_packages = []
+    optional_missing = []
+    
+    # 核心依赖
+    core_packages = ['fastmcp', 'requests', 'beautifulsoup4', 'markdownify']
+    # 大模型功能依赖（可选）
+    llm_packages = ['openai', 'python-dotenv']
     
     for pip_name, import_name in package_mappings.items():
         try:
             __import__(import_name)
         except ImportError:
-            missing_packages.append(pip_name)
+            if pip_name in core_packages:
+                missing_packages.append(pip_name)
+            else:
+                optional_missing.append(pip_name)
     
     if missing_packages:
-        print("❌ 缺少以下依赖包:")
+        print("❌ 缺少以下核心依赖包:")
         for package in missing_packages:
             print(f"   - {package}")
         print("\n请运行以下命令安装依赖:")
         print(f"pip install {' '.join(missing_packages)}")
         return False
+    
+    if optional_missing:
+        print("⚠️  缺少以下可选依赖包（大模型功能需要）:")
+        for package in optional_missing:
+            print(f"   - {package}")
+        print("\n如需使用大模型功能，请运行:")
+        print(f"pip install {' '.join(optional_missing)}")
+        print("\n基础爬虫功能可以正常使用，按Enter继续...")
+        input()
     
     return True
 

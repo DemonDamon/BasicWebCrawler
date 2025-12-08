@@ -101,13 +101,21 @@ SITE_CONFIGS = {
         'headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
         # 注意：不要把article放在前面，因为页面底部的Collection卡片也是article标签
-        # 优先选择包含多个h2的main区域
-        'main_content_selectors': ['main', 'div.container', '.prose', 'div[class*="prose"]'],
+        # 优先选择 Model Card 内容区域
+        'main_content_selectors': [
+            '.model-card-content',           # Model Card 核心内容（最精确）
+            'section.pt-8.border-gray-100',  # Model 页面主要区域
+            '.prose',                         # 通用文档内容
+            'div[class*="prose"]',           # 包含 prose 类的容器
+            'main'                            # 最后备选
+        ],
         'needs_cookies': False,
         'needs_js': True,
-        'wait_selectors': ['h2', 'p']
+        'wait_selectors': ['.model-card-content', 'h1', 'h2'],  # 等待 Model Card 核心内容加载
+        'wait_timeout': 10000  # 增加等待时间到 10 秒
     },
     'huggingface.co': {
         'headers': {
@@ -157,60 +165,147 @@ def should_render_with_js(url, soup, response_text):
 
     return False
 
-def render_page_with_playwright(url, headers=None, cookies=None, wait_selectors=None, timeout_ms=15000):
+def render_page_with_playwright(url, headers=None, cookies=None, wait_selectors=None, timeout_ms=15000, verbose=False):
     """
     使用 Playwright 渲染页面并返回完整的HTML。
-    - headers 会作为额外请求头设置
-    - cookies 可用于需要登录的站点
-    - wait_selectors 若提供，将等待其中任一选择器出现后再返回内容
+    
+    参数:
+    - headers: 额外请求头
+    - cookies: cookies（用于需要登录的站点）
+    - wait_selectors: 等待选择器列表
+    - timeout_ms: 超时时间（毫秒）
+    - verbose: 是否输出详细日志
     """
     if sync_playwright is None:
+        import sys
+        sys.stderr.write("⚠️ Playwright未安装，无法使用JS渲染功能\n")
         return None
+
+    def log(message):
+        if verbose:
+            import sys
+            sys.stderr.write(f"[Playwright] {message}\n")
 
     try:
         with sync_playwright() as p:
+            log("启动浏览器...")
             browser = p.chromium.launch(
                 headless=True,
-                args=['--disable-blink-features=AutomationControlled']
-            )
-            context = browser.new_context(
-                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-web-security',
+                    '--disable-features=IsolateOrigins,site-per-process'
+                ]
             )
             
-            # 注入反检测脚本
+            log("创建浏览器上下文...")
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                viewport={'width': 1920, 'height': 1080},
+                locale='zh-CN'
+            )
+            
+            # 增强反检测脚本
             context.add_init_script("""
+                // 移除 webdriver 标识
                 Object.defineProperty(navigator, 'webdriver', {
                     get: () => undefined
                 });
+                
+                // 模拟真实的 plugins
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+                
+                // 模拟真实的语言设置
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['zh-CN', 'zh', 'en-US', 'en']
+                });
+                
+                // 防止通过 chrome 对象检测
+                window.chrome = {
+                    runtime: {}
+                };
             """)
 
             if headers:
+                log(f"设置请求头: {len(headers)} 个")
                 context.set_extra_http_headers(headers)
 
-            # 可选：添加 cookies（需要符合 Playwright cookie 结构）
             if cookies:
                 with contextlib.suppress(Exception):
                     context.add_cookies(cookies)
+                    log("已添加 cookies")
 
             page = context.new_page()
-            page.goto(url, wait_until='networkidle')
-
-            # 如果提供了等待选择器，等待其中之一出现
-            if wait_selectors:
-                for sel in wait_selectors:
-                    with contextlib.suppress(Exception):
-                        page.wait_for_selector(sel, timeout=timeout_ms)
-                        break
             
-            # 额外等待2秒，确保动态内容完全加载（特别是React应用）
-            page.wait_for_timeout(2000)
+            # 监听控制台（用于调试）
+            console_messages = []
+            if verbose:
+                page.on('console', lambda msg: console_messages.append(f"[{msg.type}] {msg.text}"))
+            
+            log(f"导航到: {url}")
+            page.goto(url, wait_until='networkidle', timeout=timeout_ms)
+            log("页面导航完成（networkidle）")
 
+            # 等待关键选择器
+            selector_found = False
+            if wait_selectors:
+                log(f"等待选择器: {wait_selectors}")
+                for sel in wait_selectors:
+                    try:
+                        page.wait_for_selector(sel, timeout=timeout_ms // len(wait_selectors))
+                        log(f"✓ 选择器已加载: {sel}")
+                        selector_found = True
+                        break
+                    except Exception:
+                        log(f"✗ 选择器超时: {sel}")
+                
+                if not selector_found:
+                    log("⚠️ 所有等待选择器都超时，但继续处理...")
+            
+            # 动态等待内容稳定
+            log("等待内容稳定...")
+            previous_length = 0
+            stable_count = 0
+            
+            for i in range(6):  # 最多检查6次，每次0.5秒
+                page.wait_for_timeout(500)
+                current_length = len(page.content())
+                
+                if current_length == previous_length:
+                    stable_count += 1
+                    if stable_count >= 2:  # 连续2次长度不变，认为稳定
+                        log(f"✓ 内容已稳定: {current_length} 字符")
+                        break
+                else:
+                    stable_count = 0
+                
+                previous_length = current_length
+                log(f"  检查 {i+1}/6: {current_length} 字符")
+            
+            # 获取最终内容
             content = page.content()
+            log(f"获取最终HTML: {len(content)} 字符")
+            
+            # 输出控制台消息（如果有错误）
+            if verbose and console_messages:
+                error_msgs = [msg for msg in console_messages if '[error]' in msg.lower()]
+                if error_msgs:
+                    log(f"⚠️ 页面控制台错误 ({len(error_msgs)} 个):")
+                    for msg in error_msgs[:5]:  # 只显示前5个
+                        log(f"  {msg}")
+            
             context.close()
             browser.close()
+            log("浏览器已关闭")
             return content
+            
     except Exception as e:
-        print(f"Playwright 渲染失败: {e}")
+        error_msg = f"Playwright 渲染失败: {type(e).__name__} - {str(e)}"
+        import sys
+        sys.stderr.write(f"{error_msg}\n")
+        log(error_msg)
         return None
 
 def sanitize_filename(filename):
@@ -255,7 +350,8 @@ def should_download_image(img_url):
     # 检查是否是忽略的扩展名
     for ext in IGNORED_EXTENSIONS:
         if path.endswith(ext):
-            print(f"跳过下载: {img_url} (忽略的格式: {ext})")
+            import sys
+            sys.stderr.write(f"跳过下载: {img_url} (忽略的格式: {ext})\n")
             return False
     
     return True
@@ -293,14 +389,17 @@ def download_image(img_url, base_url, img_folder):
                 with open(img_path, 'wb') as f:
                     for chunk in response.iter_content(1024):
                         f.write(chunk)
-                print(f"下载图片: {img_url} -> {img_path}")
+                import sys
+                sys.stderr.write(f"下载图片: {img_url} -> {img_path}\n")
             else:
-                print(f"无法下载图片 {img_url}, 状态码: {response.status_code}")
+                import sys
+                sys.stderr.write(f"无法下载图片 {img_url}, 状态码: {response.status_code}\n")
                 return None
         
         return img_path
     except Exception as e:
-        print(f"下载图片时出错 {img_url}: {str(e)}")
+        import sys
+        sys.stderr.write(f"下载图片时出错 {img_url}: {str(e)}\n")
         return None
 
 def process_images(soup, base_url, img_folder):
@@ -344,6 +443,74 @@ def replace_md_image_urls(markdown_text, base_url, img_folder):
     # 替换所有匹配的图片URL
     return re.sub(img_pattern, replace_url, markdown_text)
 
+def smart_content_extraction(soup, url, site_config, verbose=False):
+    """
+    智能内容提取：当配置的选择器都失败时的备用方案
+    
+    策略：
+    1. 找到包含最多段落文本的元素
+    2. 排除导航、侧边栏、页脚
+    3. 保留主要内容区域
+    
+    Returns:
+        (content_element, description)
+    """
+    def log(message):
+        if verbose:
+            import sys
+            sys.stderr.write(f"[SmartExtract] {message}\n")
+    
+    log("开始智能内容提取...")
+    
+    # 先尝试配置的选择器
+    for selector in site_config['main_content_selectors']:
+        content = soup.select_one(selector)
+        if content:
+            text_len = len(content.get_text(strip=True))
+            if text_len > 100:
+                log(f"✓ 使用配置选择器: {selector} ({text_len} 字符)")
+                return content, f"配置选择器: {selector}"
+    
+    # 启发式方法：找到文本最多的容器
+    log("配置选择器全部失败，使用启发式方法...")
+    candidates = []
+    
+    # 候选元素类型（按优先级）
+    for tag in ['main', 'article', 'section', 'div']:
+        elements = soup.find_all(tag)
+        for elem in elements:
+            # 排除导航、侧边栏等
+            elem_class = ' '.join(elem.get('class', [])).lower()
+            elem_id = (elem.get('id') or '').lower()
+            
+            exclude_keywords = ['nav', 'sidebar', 'footer', 'header', 'menu', 'advertisement', 'ads', 'banner']
+            if any(keyword in elem_class or keyword in elem_id for keyword in exclude_keywords):
+                continue
+            
+            text_len = len(elem.get_text(strip=True))
+            if text_len > 200:  # 至少200字符
+                # 计算内容质量得分
+                score = text_len
+                # 优先选择有标题的内容
+                if elem.find(['h1', 'h2', 'h3']):
+                    score += 1000
+                # 优先选择有段落的内容
+                p_count = len(elem.find_all('p'))
+                score += p_count * 50
+                
+                candidates.append((elem, score, text_len, tag))
+    
+    if candidates:
+        # 选择得分最高的元素
+        best = max(candidates, key=lambda x: x[1])
+        best_elem, score, text_len, tag = best
+        log(f"✓ 启发式提取成功: <{tag}> 标签，{text_len} 字符，得分 {score}")
+        return best_elem, f"启发式提取: <{tag}> ({text_len} 字符)"
+    
+    # 最后备选：使用 body
+    log("⚠️ 启发式提取也失败，使用 body 元素")
+    return soup.find('body') or soup, "备选: body元素"
+
 def get_site_config(url):
     """
     根据URL获取网站特定的配置
@@ -353,6 +520,84 @@ def get_site_config(url):
         if site_domain in domain:
             return config
     return SITE_CONFIGS['default']
+
+def clean_markdown(markdown_text):
+    """
+    清理和优化 Markdown 文本
+    
+    - 移除多余空行（超过2个连续空行）
+    - 规范化列表格式
+    - 修复代码块格式
+    - 移除行尾空白
+    """
+    if not markdown_text:
+        return markdown_text
+    
+    # 移除多余空行（最多保留2个连续空行）
+    markdown_text = re.sub(r'\n{4,}', '\n\n\n', markdown_text)
+    
+    # 规范化列表项前的空行
+    markdown_text = re.sub(r'\n{3,}([-*+] )', r'\n\n\1', markdown_text)
+    
+    # 确保代码块前后有空行
+    markdown_text = re.sub(r'([^\n])\n(```)', r'\1\n\n\2', markdown_text)
+    markdown_text = re.sub(r'(```[^\n]*)\n([^\n`])', r'\1\n\n\2', markdown_text)
+    
+    # 确保标题前后有适当空行
+    markdown_text = re.sub(r'([^\n])\n(#{1,6} )', r'\1\n\n\2', markdown_text)
+    markdown_text = re.sub(r'(#{1,6} [^\n]+)\n([^\n#])', r'\1\n\n\2', markdown_text)
+    
+    # 移除行尾空白
+    lines = markdown_text.split('\n')
+    cleaned_lines = [line.rstrip() for line in lines]
+    
+    return '\n'.join(cleaned_lines)
+
+def fetch_with_retry(url, max_retries=3, retry_delay=2, **kwargs):
+    """
+    带重试机制的爬取函数
+    
+    Args:
+        url: 目标URL
+        max_retries: 最大重试次数（默认3次）
+        retry_delay: 重试间隔秒数（默认2秒）
+        **kwargs: 传递给 fetch_and_convert_to_markdown 的其他参数
+    
+    Returns:
+        (markdown_output, page_title) 或 (None, error_message)
+    """
+    last_error = None
+    
+    import sys
+    for attempt in range(max_retries):
+        try:
+            sys.stderr.write(f"尝试爬取 ({attempt + 1}/{max_retries}): {url}\n")
+            
+            # 重试时自动启用详细日志
+            kwargs['verbose'] = kwargs.get('verbose', False) or (attempt > 0)
+            
+            markdown_output, page_title = fetch_and_convert_to_markdown(url, **kwargs)
+            
+            if markdown_output and len(markdown_output) > 200:
+                sys.stderr.write(f"✓ 第 {attempt + 1} 次尝试成功\n")
+                return markdown_output, page_title
+            
+            last_error = "返回内容为空或过短"
+            sys.stderr.write(f"✗ 第 {attempt + 1} 次尝试失败: {last_error}\n")
+            
+        except Exception as e:
+            last_error = f"{type(e).__name__}: {str(e)}"
+            sys.stderr.write(f"✗ 第 {attempt + 1} 次尝试异常: {last_error}\n")
+        
+        # 如果不是最后一次尝试，等待后重试
+        if attempt < max_retries - 1:
+            wait_time = retry_delay * (attempt + 1)  # 递增等待时间
+            sys.stderr.write(f"等待 {wait_time} 秒后重试...\n")
+            time.sleep(wait_time)
+    
+    error_msg = f"所有 {max_retries} 次尝试均失败。最后错误: {last_error}"
+    sys.stderr.write(f"✗ {error_msg}\n")
+    return None, f"Error_After_{max_retries}_Retries"
 
 def extract_urls_from_text(text):
     """
@@ -387,7 +632,7 @@ def extract_urls_from_text(text):
     
     return normalized_urls
 
-def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor_strategy='section', js_mode='auto', wait_selectors_override=None):
+def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor_strategy='section', js_mode='auto', wait_selectors_override=None, verbose=False):
     """
     获取网页内容，下载图片，并转换为Markdown格式
     
@@ -395,14 +640,29 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
     - url: 网页URL
     - img_folder: 图片保存文件夹
     - cookies: 可选的cookies字典
+    - anchor_strategy: 锚点处理策略 ('section' 或 'full')
+    - js_mode: JS渲染模式 ('auto', 'on', 'off')
+    - wait_selectors_override: 覆盖默认的等待选择器
+    - verbose: 是否输出详细调试日志
     """
+    def log(message):
+        """条件日志输出"""
+        if verbose:
+            import sys
+            sys.stderr.write(f"[DEBUG] {message}\n")
+    
     try:
+        log(f"开始爬取URL: {url}")
         # 创建图片文件夹
         if not os.path.exists(img_folder):
             os.makedirs(img_folder)
+            log(f"创建图片文件夹: {img_folder}")
         
         # 获取网站特定配置
         site_config = get_site_config(url)
+        domain = urlparse(url).netloc
+        log(f"使用站点配置: {domain}")
+        log(f"需要JS渲染: {site_config.get('needs_js', False)}")
         
         # 准备请求头
         headers = {
@@ -416,7 +676,8 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
         
         # 检查是否需要cookies
         if site_config['needs_cookies'] and not cookies:
-            print(f"警告: 该网站({urlparse(url).netloc})可能需要cookies才能正常访问")
+            import sys
+            sys.stderr.write(f"警告: 该网站({urlparse(url).netloc})可能需要cookies才能正常访问\n")
         
         # JS 渲染策略
         site_conf = get_site_config(url)
@@ -453,13 +714,17 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
                 if js_mode == 'auto' and should_render_with_js(url, soup, response_text):
                     use_js = True
             except Exception as e:
-                print(f"Requests请求失败，尝试使用Playwright: {e}")
+                import sys
+                sys.stderr.write(f"Requests请求失败，尝试使用Playwright: {e}\n")
                 use_js = True
 
         if use_js:
-            print("使用Playwright渲染页面...")
-            rendered_html = render_page_with_playwright(url, headers=headers, cookies=cookies, wait_selectors=wait_selectors)
+            log("使用Playwright渲染页面...")
+            import sys
+            sys.stderr.write("使用Playwright渲染页面...\n")
+            rendered_html = render_page_with_playwright(url, headers=headers, cookies=cookies, wait_selectors=wait_selectors, verbose=verbose)
             if rendered_html:
+                log(f"Playwright渲染成功，HTML长度: {len(rendered_html)}")
                 soup = BeautifulSoup(rendered_html, 'html.parser')
             else:
                 if soup is None:
@@ -467,6 +732,8 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
     
         if not soup:
              raise Exception("无法解析网页内容")
+        
+        log(f"HTML解析完成，文档长度: {len(str(soup))}")
 
         # 提取网页标题
         title = soup.title.string if soup.title else 'Untitled Page'
@@ -480,21 +747,10 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
         for element in soup.select('script, style, iframe, nav, footer, .sidebar, .advertisement, .ads'):
             element.decompose()
         
-        # 提取主要内容
-        main_content = None
-        
-        # 首先尝试使用网站特定的选择器
-        for selector in site_config['main_content_selectors']:
-            content = soup.select_one(selector)
-            if content:
-                main_content = content
-                break
-
-        # 如果没有找到主要内容区域，则使用body
-        if not main_content:
-            main_content = soup.find('body')
-            if not main_content:
-                main_content = soup
+        # 提取主要内容 - 使用智能提取
+        log("开始提取主要内容...")
+        main_content, extraction_method = smart_content_extraction(soup, url, site_config, verbose=verbose)
+        log(f"内容提取完成: {extraction_method}")
 
         # 处理URL中的锚点（fragment），例如 #single-file-parsing
         # 对于文档站点（如 ragas.org.cn），默认使用完整页面模式
@@ -532,21 +788,49 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
                 main_content = section_container
         
         # 将内容转换为Markdown格式
+        log("转换HTML为Markdown...")
         markdown_content = markdownify.markdownify(str(main_content), heading_style="ATX")
+        log(f"Markdown转换完成，长度: {len(markdown_content)}")
         
         # 替换Markdown文本中的图片URL
         markdown_content = replace_md_image_urls(markdown_content, url, img_folder)
         
+        # 清理和优化Markdown格式
+        markdown_content = clean_markdown(markdown_content)
+        log("Markdown清理完成")
+        
         # 生成完整的Markdown文档
         markdown_document = f"# {title}\n\n原文链接: {url}\n\n{markdown_content}"
         
+        log(f"✓ 爬取成功，最终文档长度: {len(markdown_document)}")
         return markdown_document, title
     
+    except requests.exceptions.Timeout as e:
+        error_msg = f"网络请求超时: {str(e)}"
+        log(error_msg)
+        import sys
+        sys.stderr.write(f"{error_msg}\n")
+        return None, "Error_Timeout"
+    except requests.exceptions.ConnectionError as e:
+        error_msg = f"网络连接失败: {str(e)}"
+        log(error_msg)
+        import sys
+        sys.stderr.write(f"{error_msg}\n")
+        return None, "Error_Connection"
     except Exception as e:
-        print(f"处理网页时出错: {str(e)}")
+        error_msg = f"处理网页时出错 ({type(e).__name__}): {str(e)}"
+        log(error_msg)
+        import sys
+        sys.stderr.write(f"{error_msg}\n")
+        if verbose:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
         return None, "Error_Page"
 
 def convert_html_to_markdown(html, url, img_folder='images'):
+    """
+    将HTML转换为Markdown（用于interactive_crawl等场景）
+    """
     try:
         if not os.path.exists(img_folder):
             os.makedirs(img_folder)
@@ -562,18 +846,23 @@ def convert_html_to_markdown(html, url, img_folder='images'):
         for selector in site_config['main_content_selectors']:
             content = soup.select_one(selector)
             if content:
-                main_content = content
-                break
+                content_length = len(content.get_text(strip=True))
+                if content_length > 100:  # 验证内容质量
+                    main_content = content
+                    break
         if not main_content:
             main_content = soup.find('body')
             if not main_content:
                 main_content = soup
         markdown_content = markdownify.markdownify(str(main_content), heading_style="ATX")
         markdown_content = replace_md_image_urls(markdown_content, url, img_folder)
+        # 清理Markdown格式
+        markdown_content = clean_markdown(markdown_content)
         markdown_document = f"# {title}\n\n原文链接: {url}\n\n{markdown_content}"
         return markdown_document, title
     except Exception as e:
-        print(f"处理HTML时出错: {str(e)}")
+        import sys
+        sys.stderr.write(f"处理HTML时出错: {str(e)}\n")
         return None, "Error_Page"
 
 def render_with_actions(url, actions, headers=None, cookies=None, headless=False, channel="chrome", timeout_ms=15000):
@@ -655,7 +944,8 @@ def render_with_actions(url, actions, headers=None, cookies=None, headless=False
             browser.close()
             return content
     except Exception as e:
-        print(f"Playwright 交互失败: {e}")
+        import sys
+        sys.stderr.write(f"Playwright 交互失败: {e}\n")
         return None
 
 async def _async_render_with_actions(url, actions, headers=None, cookies=None, headless=False, channel="chrome", timeout_ms=15000):
@@ -759,7 +1049,8 @@ async def _async_render_with_actions(url, actions, headers=None, cookies=None, h
             await browser.close()
             return content
     except Exception as e:
-        print(f"Playwright 异步交互失败: {e}")
+        import sys
+        sys.stderr.write(f"Playwright 异步交互失败: {e}\n")
         return None
 
 def render_with_actions_threaded(url, actions, headers=None, cookies=None, headless=False, channel="chrome", timeout_ms=15000):
@@ -793,15 +1084,16 @@ def process_url_text_mode(text, img_folder='images', cookies=None):
     - 爬取结果摘要
     """
     # 提取URL
+    import sys
     urls = extract_urls_from_text(text)
     
     if not urls:
-        print("未在提供的文本中找到任何URL")
+        sys.stderr.write("未在提供的文本中找到任何URL\n")
         return None, "未找到URL"
     
-    print(f"从文本中提取到 {len(urls)} 个URL:")
+    sys.stderr.write(f"从文本中提取到 {len(urls)} 个URL:\n")
     for i, url in enumerate(urls):
-        print(f"{i+1}. {url}")
+        sys.stderr.write(f"{i+1}. {url}\n")
     
     # 爬取结果
     results = []
@@ -810,7 +1102,7 @@ def process_url_text_mode(text, img_folder='images', cookies=None):
     
     # 爬取每个URL
     for i, url in enumerate(urls):
-        print(f"\n开始爬取 URL {i+1}/{len(urls)}: {url}")
+        sys.stderr.write(f"\n开始爬取 URL {i+1}/{len(urls)}: {url}\n")
         
         start_time = time.time()
         markdown_output, page_title = fetch_and_convert_to_markdown(url, img_folder, cookies)
@@ -819,10 +1111,10 @@ def process_url_text_mode(text, img_folder='images', cookies=None):
         if markdown_output:
             results.append(markdown_output)
             successful_urls.append(url)
-            print(f"成功爬取 {url}, 耗时: {end_time - start_time:.2f} 秒")
+            sys.stderr.write(f"成功爬取 {url}, 耗时: {end_time - start_time:.2f} 秒\n")
         else:
             failed_urls.append(url)
-            print(f"爬取失败: {url}")
+            sys.stderr.write(f"爬取失败: {url}\n")
     
     # 如果没有成功爬取任何URL，返回None
     if not results:

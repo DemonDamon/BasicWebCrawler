@@ -7,6 +7,7 @@ BasicWebCrawler MCP Server
 - 从文本中提取URL并批量爬取
 - 图片下载和本地化
 - 多种网站特定配置支持
+- 大模型二次生成内容（整理、翻译、格式化等）
 """
 
 import asyncio
@@ -26,6 +27,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from fastmcp import FastMCP
 from crawler import (
     fetch_and_convert_to_markdown,
+    fetch_with_retry,
     process_url_text_mode,
     convert_html_to_markdown,
     render_with_actions,
@@ -34,6 +36,16 @@ from crawler import (
     get_site_config,
     sanitize_filename
 )
+
+# 导入大模型客户端
+try:
+    from llm_client import LLMClientFactory
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+    # 不使用 print，因为会干扰 MCP 的 JSON-RPC 通信
+    import sys
+    sys.stderr.write("⚠️ 警告: llm_client.py 不可用，大模型功能将被禁用\n")
 
 # 创建FastMCP服务器实例
 mcp = FastMCP("BasicWebCrawler")
@@ -44,7 +56,9 @@ def crawl_single_url(
     img_folder: str = "images",
     use_cookies: bool = False,
     cookies_file: Optional[str] = None,
-    output_dir: Optional[str] = None
+    output_dir: Optional[str] = None,
+    max_retries: int = 2,
+    verbose: bool = False
 ) -> str:
     """
     爬取单个网页并转换为Markdown格式
@@ -54,11 +68,22 @@ def crawl_single_url(
         img_folder: 图片保存文件夹路径，默认为"images"
         use_cookies: 是否使用cookies文件
         cookies_file: cookies文件路径（JSON格式）
+        output_dir: 输出目录路径
+        max_retries: 最大重试次数（默认2次）
+        verbose: 是否输出详细调试日志
         
     Returns:
         包含爬取结果信息的字符串
     """
     try:
+        # 记录调试信息
+        debug_info = {
+            'url': url,
+            'domain': urlparse(url).netloc,
+            'retries_used': 0,
+            'js_rendered': False,
+            'selector_used': None
+        }
         # 自动检测项目根目录下的cookies文件
         if not cookies_file:
             project_root = Path(__file__).parent.parent
@@ -78,8 +103,11 @@ def crawl_single_url(
         
         # 检查网站配置
         site_config = get_site_config(url)
+        debug_info['needs_cookies'] = site_config.get('needs_cookies', False)
+        debug_info['needs_js'] = site_config.get('needs_js', False)
+        
         if site_config['needs_cookies'] and not cookies:
-            return f"警告: 网站 {urlparse(url).netloc} 可能需要cookies才能正常访问。建议使用cookies参数。"
+            return f"⚠️ 警告: 网站 {debug_info['domain']} 可能需要cookies才能正常访问。\n建议使用 cookies_file 参数提供cookies。\n\n将尝试继续爬取..."
         
         project_root = Path(__file__).parent.parent
         target_dir = Path(output_dir).resolve() if output_dir else project_root
@@ -90,8 +118,16 @@ def crawl_single_url(
         try:
             with redirect_stdout(sys.stderr):
                 start_time = time.time()
-                markdown_output, page_title = fetch_and_convert_to_markdown(url, img_dir, cookies)
+                # 使用带重试机制的爬取函数
+                markdown_output, page_title = fetch_with_retry(
+                    url, 
+                    img_folder=img_dir, 
+                    cookies=cookies,
+                    max_retries=max_retries,
+                    verbose=verbose
+                )
                 end_time = time.time()
+                debug_info['retries_used'] = max_retries if markdown_output is None else 1
         finally:
             os.chdir(old_cwd)
         
@@ -103,13 +139,29 @@ def crawl_single_url(
                 output_path = target_dir / output_file
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(markdown_output)
-                return f"✅ 爬取成功！\n\n" \
+                
+                # 统计信息
+                content_length = len(markdown_output)
+                img_count = markdown_output.count('![')
+                
+                result = f"✅ 爬取成功！\n\n" \
                        f"📄 页面标题: {page_title}\n" \
                        f"🔗 URL: {url}\n" \
                        f"📁 保存文件: {output_path}\n" \
+                       f"📊 内容长度: {content_length} 字符\n" \
+                       f"🖼️ 图片数量: {img_count} 张\n" \
                        f"🖼️ 图片目录: {img_dir}/\n" \
-                       f"⏱️ 耗时: {end_time - start_time:.2f} 秒\n\n" \
-                       f"内容预览:\n{markdown_output[:500]}..."
+                       f"⏱️ 耗时: {end_time - start_time:.2f} 秒\n"
+                
+                if verbose:
+                    result += f"\n🔍 调试信息:\n"
+                    result += f"• 站点域名: {debug_info['domain']}\n"
+                    result += f"• 需要JS: {debug_info['needs_js']}\n"
+                    result += f"• 需要Cookies: {debug_info['needs_cookies']}\n"
+                    result += f"• 重试次数: {debug_info['retries_used']}\n"
+                
+                result += f"\n内容预览:\n{markdown_output[:500]}..."
+                return result
                        
             except OSError as e:
                 # 使用备用文件名
@@ -119,10 +171,30 @@ def crawl_single_url(
                     f.write(markdown_output)
                 return f"✅ 爬取成功（使用备用文件名）！\n文件: {fallback_filename}\n耗时: {end_time - start_time:.2f} 秒"
         else:
-            return f"❌ 爬取失败: 无法获取网页内容，请检查URL是否正确或网站是否可访问"
+            # 提供详细的失败信息
+            error_msg = f"❌ 爬取失败: 无法获取网页内容\n\n"
+            error_msg += f"🔍 调试信息:\n"
+            error_msg += f"• URL: {url}\n"
+            error_msg += f"• 域名: {debug_info['domain']}\n"
+            error_msg += f"• 需要JS: {debug_info['needs_js']}\n"
+            error_msg += f"• 需要Cookies: {debug_info['needs_cookies']}\n"
+            error_msg += f"• 重试次数: {max_retries}\n\n"
+            error_msg += f"💡 建议:\n"
+            
+            if debug_info['needs_cookies']:
+                error_msg += "• 该网站可能需要cookies，请尝试提供 cookies_file 参数\n"
+            if debug_info['needs_js']:
+                error_msg += "• 该网站需要JS渲染，已自动使用Playwright\n"
+            
+            error_msg += "• 请检查URL是否正确或网站是否可访问\n"
+            error_msg += f"• 尝试设置 verbose=True 获取更多调试信息"
+            
+            return error_msg
             
     except Exception as e:
-        return f"❌ 爬取过程中发生错误: {str(e)}"
+        import traceback
+        error_trace = traceback.format_exc() if verbose else str(e)
+        return f"❌ 爬取过程中发生异常: {error_trace}"
 
 @mcp.tool()
 def crawl_urls_from_text(
@@ -449,6 +521,237 @@ def interactive_crawl(
             return "❌ 转换失败: 未生成Markdown内容"
     except Exception as e:
         return f"❌ 交互过程中发生错误: {str(e)}"
+
+@mcp.tool()
+def crawl_and_regenerate_with_llm(
+    url: str = None,
+    input_file: str = None,
+    provider: str = "deepseek",
+    model_name: Optional[str] = None,
+    prompt_template: Optional[str] = None,
+    img_folder: str = "images",
+    output_dir: Optional[str] = None,
+    use_cookies: bool = False,
+    cookies_file: Optional[str] = None,
+    max_retries: int = 2,
+    save_original: bool = True,
+    language: str = "中文"
+) -> str:
+    """
+    爬取网页内容并使用大模型进行二次生成（整理、翻译、格式化等）
+    
+    Args:
+        url: 要爬取的网页URL（与input_file二选一）
+        input_file: 已有的Markdown文件路径（与url二选一，优先使用）
+        provider: 大模型厂商，可选：siliconflow, deepseek, bailian, kimi（默认：deepseek）
+        model_name: 模型名称，如果为None则使用厂商默认模型
+        prompt_template: 自定义提示词模板，可以使用 {content} 作为占位符
+        img_folder: 图片保存文件夹路径，默认为"images"
+        output_dir: 输出目录路径
+        use_cookies: 是否使用cookies文件
+        cookies_file: cookies文件路径（JSON格式）
+        max_retries: 最大重试次数（默认2次，当使用input_file时此参数无效）
+        save_original: 是否同时保存原始爬取内容（默认True）
+        language: 目标语言（默认：中文）
+        
+    Returns:
+        包含爬取和生成结果信息的字符串
+    """
+    if not LLM_AVAILABLE:
+        return "❌ 错误: llm_client 模块不可用，请确保 llm_client.py 文件存在"
+    
+    if not url and not input_file:
+        return "❌ 错误: 必须提供 url 或 input_file 参数之一"
+    
+    try:
+        # 设置输出目录
+        if output_dir:
+            target_dir = Path(output_dir).resolve()
+        else:
+            target_dir = Path.cwd()
+        target_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 第一步：获取内容
+        if input_file:
+            # 使用已有文件
+            import sys
+            sys.stderr.write(f"📄 使用已有文件: {input_file}\n")
+            
+            input_path = Path(input_file)
+            if not input_path.exists():
+                return f"❌ 文件不存在: {input_file}"
+            
+            with open(input_path, 'r', encoding='utf-8') as f:
+                original_content = f.read()
+            
+            page_title = input_path.stem
+            md_file_path = input_path
+            
+        else:
+            # 爬取网页内容
+            import sys
+            sys.stderr.write(f"📡 爬取网页: {url}\n")
+            
+            # 处理 cookies
+            cookies = None
+            if use_cookies and cookies_file and os.path.exists(cookies_file):
+                try:
+                    with open(cookies_file, 'r', encoding='utf-8') as f:
+                        cookies = json.load(f)
+                except Exception as e:
+                    return f"❌ 读取cookies文件失败: {str(e)}"
+            
+            # 使用 crawler.py 的核心函数直接爬取
+            img_dir = str(target_dir / img_folder)
+            
+            try:
+                # 调用爬取函数
+                markdown_output, page_title = fetch_and_convert_to_markdown(
+                    url=url,
+                    img_folder=img_dir,
+                    cookies=cookies,
+                    verbose=False
+                )
+            except Exception as e:
+                return f"❌ 爬取失败: {str(e)}"
+            
+            if not markdown_output:
+                return "❌ 爬取失败: 未能获取网页内容"
+            
+            # 保存原始爬取内容
+            sanitized_title = sanitize_filename(page_title)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            original_filename = f"{sanitized_title}_{timestamp}.md"
+            md_file_path = target_dir / original_filename
+            
+            with open(md_file_path, 'w', encoding='utf-8') as f:
+                f.write(markdown_output)
+            
+            original_content = markdown_output
+        
+        # 第二步：使用大模型进行二次生成
+        import sys
+        sys.stderr.write(f"🤖 调用大模型进行内容重写...\n")
+        
+        # 加载环境变量
+        LLMClientFactory.load_env_config()
+        
+        # 创建大模型客户端
+        llm_client = LLMClientFactory.create_client(
+            provider=provider,
+            model_name=model_name
+        )
+        
+        # 构建提示词
+        if prompt_template is None:
+            # 默认提示词模板
+            prompt_template = f"""你是一个专业的内容整理助手。我给你一份从网页爬取的Markdown格式内容，请帮我：
+
+1. 整理和优化内容结构，使其更清晰易读
+2. 翻译成{language}（如果原内容不是{language}）
+3. 保留所有重要信息和链接
+4. 保持Markdown格式
+5. 适当添加章节标题和段落划分
+
+原始内容：
+
+{{content}}
+
+请输出整理后的Markdown内容："""
+        
+        # 替换占位符
+        final_prompt = prompt_template.replace("{content}", original_content)
+        
+        # 调用大模型
+        messages = [{"role": "user", "content": final_prompt}]
+        
+        start_time = time.time()
+        result = llm_client.chat_completion(messages)
+        end_time = time.time()
+        
+        if result.get("error"):
+            return f"❌ 大模型调用失败: {result['error']}"
+        
+        regenerated_content = result.get("content", "")
+        
+        if not regenerated_content:
+            return f"❌ 大模型返回空内容"
+        
+        # 保存二次生成的内容
+        base_path = Path(md_file_path)
+        regenerated_file_path = base_path.parent / f"{base_path.stem}_regenerated.md"
+        
+        with open(regenerated_file_path, 'w', encoding='utf-8') as f:
+            f.write(regenerated_content)
+        
+        # 如果不需要保存原始内容，可以删除
+        if not save_original and input_file is None:  # 只有当内容是刚爬取的才删除
+            os.remove(md_file_path)
+            original_status = "已删除"
+        else:
+            original_status = str(md_file_path)
+        
+        # 构建返回信息
+        result_info = f"""✅ {'内容重写' if input_file else '爬取并重写'}成功！
+
+{'='*60}
+📊 处理统计
+{'='*60}
+{'🔗 URL: ' + url if url else '📄 输入文件: ' + input_file}
+📄 页面标题: {page_title}
+🏢 大模型厂商: {result['provider']}
+🤖 模型: {result['model']}
+📝 原始内容: {len(original_content)} 字符
+📝 生成内容: {len(regenerated_content)} 字符
+⏱️  生成耗时: {end_time - start_time:.2f} 秒
+💰 Token使用: {result.get('usage', {}).get('total_tokens', 'N/A')}
+
+{'='*60}
+📁 文件信息
+{'='*60}
+📄 原始文件: {original_status}
+📄 生成文件: {regenerated_file_path}
+{'🖼️  图片目录: ' + str(target_dir / img_folder) if not input_file else ''}
+
+{'='*60}
+🎯 提示
+{'='*60}
+- 生成的内容已保存到新文件中
+- 可以通过 save_original=False 参数删除原始文件（仅限爬取模式）
+- 可以通过 prompt_template 参数自定义生成提示词
+- 支持的厂商: siliconflow, deepseek, bailian, kimi
+"""
+        
+        return result_info
+        
+    except Exception as e:
+        return f"❌ 处理过程中发生错误: {str(e)}\n\n错误类型: {type(e).__name__}"
+
+@mcp.prompt()
+def llm_regenerate_prompt(url: str, task_description: str = "整理和翻译成中文"):
+    """
+    大模型二次生成的提示模板
+    
+    Args:
+        url: 要处理的网页URL
+        task_description: 任务描述
+    """
+    prompt_text = f"""我需要爬取并使用大模型处理这个网页：{url}
+
+任务要求：
+{task_description}
+
+请使用 crawl_and_regenerate_with_llm 工具来：
+1. 爬取网页内容并转换为Markdown格式
+2. 使用大模型对内容进行二次生成和整理
+3. 保存处理后的结果
+
+你可以自定义：
+- provider: 选择大模型厂商（siliconflow/deepseek/bailian/kimi）
+- prompt_template: 自定义处理提示词
+- language: 目标语言（默认中文）
+"""
+    return prompt_text
 
 if __name__ == "__main__":
     main()
