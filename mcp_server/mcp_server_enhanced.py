@@ -329,10 +329,11 @@ def crawl_and_summarize(
     # 加载环境变量
     LLMClientFactory.load_env_config()
     
-    # 创建客户端
+    # 创建客户端（设置更长的超时时间，用于处理长内容）
     llm_client = LLMClientFactory.create_client(
         provider=llm_provider,
-        model_name=llm_model
+        model_name=llm_model,
+        timeout=300  # 5分钟超时，足够处理长内容
     )
     
     # 构建提示词

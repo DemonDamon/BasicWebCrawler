@@ -636,10 +636,11 @@ def crawl_and_regenerate_with_llm(
         # 加载环境变量
         LLMClientFactory.load_env_config()
         
-        # 创建大模型客户端
+        # 创建大模型客户端（设置更长的超时时间，用于处理长内容）
         llm_client = LLMClientFactory.create_client(
             provider=provider,
-            model_name=model_name
+            model_name=model_name,
+            timeout=300  # 5分钟超时，足够处理长内容
         )
         
         # 构建提示词
