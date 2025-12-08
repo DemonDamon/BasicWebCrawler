@@ -120,14 +120,21 @@ def show_config_examples(transport, host, port, path):
 }}'''
         print(config)
 
-def start_server_directly(transport, host, port, path):
+def start_server_directly(transport, host, port, path, version="smart"):
     """直接启动MCP服务器（导入方式）"""
     try:
         # 添加父目录到Python路径
         sys.path.append(str(Path(__file__).parent.parent))
         
-        # 导入MCP服务器
-        from mcp_server import mcp
+        # 根据版本导入MCP服务器
+        if version == "basic":
+            from mcp_server import mcp
+        elif version == "enhanced":
+            from mcp_server_enhanced import mcp
+        elif version == "smart":
+            from mcp_server_smart import mcp
+        else:
+            from mcp_server_smart import mcp  # 默认使用智能版
         
         print(f"\n🎯 启动MCP服务器...")
         print("提示: 按 Ctrl+C 停止服务器")
@@ -150,10 +157,18 @@ def start_server_directly(transport, host, port, path):
     
     return True
 
-def start_server_subprocess():
+def start_server_subprocess(version="smart"):
     """使用subprocess启动MCP服务器（兼容方式）"""
     project_root = str(Path(__file__).parent.parent)
-    mcp_server_file = Path(__file__).parent / "mcp_server.py"
+    
+    version_files = {
+        "basic": "mcp_server.py",
+        "enhanced": "mcp_server_enhanced.py",
+        "smart": "mcp_server_smart.py"
+    }
+    
+    mcp_server_filename = version_files.get(version, "mcp_server_smart.py")
+    mcp_server_file = Path(__file__).parent / mcp_server_filename
     
     try:
         os.chdir(project_root)
@@ -170,10 +185,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用示例:
-  %(prog)s                                    # 交互式启动（STDIO）
-  %(prog)s --transport stdio --auto           # 自动启动STDIO服务器
-  %(prog)s --transport sse --port 8000 --auto # 自动启动SSE服务器
-  %(prog)s --transport http --host 0.0.0.0 --auto # 自动启动HTTP服务器
+  %(prog)s                                         # 交互式启动（STDIO，智能版）
+  %(prog)s --transport stdio --auto                # 自动启动STDIO服务器（智能版）
+  %(prog)s --version basic --auto                  # 启动基础版本
+  %(prog)s --version enhanced --auto               # 启动增强版本
+  %(prog)s --transport sse --port 8000 --auto      # 自动启动SSE服务器
+  %(prog)s --transport http --host 0.0.0.0 --auto  # 自动启动HTTP服务器
         """
     )
     
@@ -209,12 +226,19 @@ def main():
         action="store_true",
         help="跳过依赖检查"
     )
+    parser.add_argument(
+        "--version",
+        choices=["basic", "enhanced", "smart"],
+        default="smart",
+        help="选择MCP服务器版本 (basic: 基础版, enhanced: 增强版, smart: 智能版，默认: smart)"
+    )
     
     args = parser.parse_args()
     
     print("🚀 BasicWebCrawler MCP服务器统一启动器")
     print("=" * 50)
     print(f"📡 传输方式: {args.transport.upper()}")
+    print(f"📦 服务器版本: {args.version.upper()}")
     
     # 检查依赖
     if not args.skip_deps:
@@ -223,10 +247,23 @@ def main():
             sys.exit(1)
         print("✅ 所有依赖包已安装")
     
-    # 检查MCP服务器文件
-    mcp_server_file = Path(__file__).parent / "mcp_server.py"
+    # 根据版本选择MCP服务器文件
+    version_files = {
+        "basic": "mcp_server.py",
+        "enhanced": "mcp_server_enhanced.py",
+        "smart": "mcp_server_smart.py"
+    }
+    
+    mcp_server_filename = version_files.get(args.version, "mcp_server_smart.py")
+    mcp_server_file = Path(__file__).parent / mcp_server_filename
+    
     if not mcp_server_file.exists():
-        print("❌ 找不到 mcp_server.py 文件")
+        print(f"❌ 找不到 {mcp_server_filename} 文件")
+        print(f"\n可用版本:")
+        for ver, fname in version_files.items():
+            fpath = Path(__file__).parent / fname
+            status = "✅" if fpath.exists() else "❌"
+            print(f"  {status} {ver}: {fname}")
         sys.exit(1)
     
     # 显示配置信息
@@ -254,11 +291,11 @@ def main():
     try:
         if args.transport == "stdio":
             # STDIO模式优先使用subprocess方式（更稳定）
-            if not start_server_subprocess():
-                start_server_directly(args.transport, args.host, args.port, args.path)
+            if not start_server_subprocess(args.version):
+                start_server_directly(args.transport, args.host, args.port, args.path, args.version)
         else:
             # SSE/HTTP模式使用直接导入方式
-            if not start_server_directly(args.transport, args.host, args.port, args.path):
+            if not start_server_directly(args.transport, args.host, args.port, args.path, args.version):
                 print("❌ 直接启动失败，请检查配置")
                 sys.exit(1)
                 
