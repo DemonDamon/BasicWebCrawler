@@ -97,12 +97,35 @@ SITE_CONFIGS = {
         'needs_js': True,  # Material for MkDocs 可能需要JS渲染
         'wait_selectors': ['main article', '.md-content', 'main']
     },
+    'hf-mirror.com': {
+        'headers': {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
+        # 注意：不要把article放在前面，因为页面底部的Collection卡片也是article标签
+        # 优先选择包含多个h2的main区域
+        'main_content_selectors': ['main', 'div.container', '.prose', 'div[class*="prose"]'],
+        'needs_cookies': False,
+        'needs_js': True,
+        'wait_selectors': ['h2', 'p']
+    },
+    'huggingface.co': {
+        'headers': {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
+        'main_content_selectors': ['main', 'div.container', '.prose', 'div[class*="prose"]'],
+        'needs_cookies': False,
+        'needs_js': True,
+        'wait_selectors': ['h2', 'p']
+    },
     'default': {
         'headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         },
-        'main_content_selectors': ['article', 'main', '.main-content', '.post-content', '.entry-content', '.content', '#content'],
+        # main应该优先于article，因为article可能是页面中的小组件
+        'main_content_selectors': ['main', 'article', '.main-content', '.post-content', '.entry-content', '.content', '#content'],
         'needs_cookies': False
     }
 }
@@ -178,6 +201,9 @@ def render_page_with_playwright(url, headers=None, cookies=None, wait_selectors=
                     with contextlib.suppress(Exception):
                         page.wait_for_selector(sel, timeout=timeout_ms)
                         break
+            
+            # 额外等待2秒，确保动态内容完全加载（特别是React应用）
+            page.wait_for_timeout(2000)
 
             content = page.content()
             context.close()
