@@ -13,6 +13,7 @@ import contextlib
 import argparse
 import threading
 import queue
+import pathlib
 try:
     import browser_cookie3
 except ImportError:
@@ -26,6 +27,22 @@ except Exception:
 
 # 不需要下载的图片格式
 IGNORED_EXTENSIONS = ['.ico', '.webp', '.svg', '.gif', '.bmp', '.tiff']
+
+# 全局 logger（可选，由 MCP 服务器设置）
+_crawler_logger = None
+
+def set_crawler_logger(logger):
+    """设置 crawler 模块使用的 logger（由 MCP 服务器调用）"""
+    global _crawler_logger
+    _crawler_logger = logger
+
+def _log_info(message):
+    """统一的日志输出函数"""
+    if _crawler_logger:
+        _crawler_logger.info(message)
+    else:
+        import sys
+        sys.stderr.write(f"{message}\n")
 
 # 网站特定配置
 SITE_CONFIGS = {
@@ -351,7 +368,7 @@ def should_download_image(img_url):
     for ext in IGNORED_EXTENSIONS:
         if path.endswith(ext):
             import sys
-            sys.stderr.write(f"跳过下载: {img_url} (忽略的格式: {ext})\n")
+            _log_info(f"跳过下载: {img_url} (忽略的格式: {ext})")
             return False
     
     return True
@@ -827,10 +844,14 @@ def fetch_and_convert_to_markdown(url, img_folder='images', cookies=None, anchor
             traceback.print_exc(file=sys.stderr)
         return None, "Error_Page"
 
-def convert_html_to_markdown(html, url, img_folder='images'):
-    """
-    将HTML转换为Markdown（用于interactive_crawl等场景）
-    """
+def apply_no_gfm(md):
+    md = re.sub(r"^\s*\|.*\|\s*$", lambda m: re.sub(r"\|", " ", m.group(0)), md, flags=re.MULTILINE)
+    md = re.sub(r"^\s*- \[(x|X| )\]\s*", "- ", md, flags=re.MULTILINE)
+    md = re.sub(r"~~(.*?)~~", r"\1", md)
+    md = re.sub(r"<https?://[^>]+>", lambda m: m.group(0)[1:-1], md)
+    return md
+
+def convert_html_to_markdown(html, url, img_folder='images', no_gfm=False, retain_images=True, keep_img_data_url=False):
     try:
         if not os.path.exists(img_folder):
             os.makedirs(img_folder)
@@ -838,7 +859,13 @@ def convert_html_to_markdown(html, url, img_folder='images'):
         title = soup.title.string if soup.title else 'Untitled Page'
         if title is None:
             title = 'Untitled Page'
-        soup = process_images(soup, url, img_folder)
+        if not retain_images:
+            soup = process_images(soup, url, img_folder)
+        if not keep_img_data_url:
+            for img in soup.find_all('img'):
+                src = img.get('src')
+                if src and src.startswith('data:'):
+                    img.decompose()
         for element in soup.select('script, style, iframe, nav, footer, .sidebar, .advertisement, .ads'):
             element.decompose()
         site_config = get_site_config(url)
@@ -846,23 +873,50 @@ def convert_html_to_markdown(html, url, img_folder='images'):
         for selector in site_config['main_content_selectors']:
             content = soup.select_one(selector)
             if content:
-                content_length = len(content.get_text(strip=True))
-                if content_length > 100:  # 验证内容质量
-                    main_content = content
-                    break
+                main_content = content
+                break
         if not main_content:
             main_content = soup.find('body')
             if not main_content:
                 main_content = soup
         markdown_content = markdownify.markdownify(str(main_content), heading_style="ATX")
-        markdown_content = replace_md_image_urls(markdown_content, url, img_folder)
-        # 清理Markdown格式
+        if not retain_images:
+            markdown_content = replace_md_image_urls(markdown_content, url, img_folder)
         markdown_content = clean_markdown(markdown_content)
+        if no_gfm:
+            markdown_content = apply_no_gfm(markdown_content)
         markdown_document = f"# {title}\n\n原文链接: {url}\n\n{markdown_content}"
         return markdown_document, title
     except Exception as e:
         import sys
         sys.stderr.write(f"处理HTML时出错: {str(e)}\n")
+        return None, "Error_Page"
+
+def convert_html_to_text(html, url):
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+        title = soup.title.string if soup.title else 'Untitled Page'
+        if title is None:
+            title = 'Untitled Page'
+        for element in soup.select('script, style, iframe, nav, footer, .sidebar, .advertisement, .ads'):
+            element.decompose()
+        site_config = get_site_config(url)
+        main_content = None
+        for selector in site_config['main_content_selectors']:
+            content = soup.select_one(selector)
+            if content:
+                main_content = content
+                break
+        if not main_content:
+            main_content = soup.find('body')
+            if not main_content:
+                main_content = soup
+        text_content = main_content.get_text("\n")
+        document = f"{title}\n\n{url}\n\n{text_content}"
+        return document, title
+    except Exception as e:
+        import sys
+        sys.stderr.write(f"处理文本时出错: {str(e)}\n")
         return None, "Error_Page"
 
 def render_with_actions(url, actions, headers=None, cookies=None, headless=False, channel="chrome", timeout_ms=15000):
@@ -1069,6 +1123,86 @@ def render_with_actions_threaded(url, actions, headers=None, cookies=None, headl
         return q.get_nowait()
     except Exception:
         return None
+
+def collect_links(soup, base_url):
+    links = []
+    for a in soup.find_all('a'):
+        href = a.get('href')
+        text = a.get_text(strip=True)
+        if not href:
+            continue
+        abs_url = href if href.startswith(('http://','https://')) else urljoin(base_url, href)
+        links.append({"href": abs_url, "text": text})
+    return links
+
+def images_summary(img_dir):
+    p = pathlib.Path(img_dir)
+    if not p.exists():
+        return {"count": 0, "types": {}}
+    types = {}
+    count = 0
+    for f in p.glob('*'):
+        if f.is_file():
+            count += 1
+            ext = f.suffix.lower().strip('.')
+            types[ext] = types.get(ext, 0) + 1
+    return {"count": count, "types": types}
+
+def links_summary(links):
+    hosts = {}
+    for item in links:
+        try:
+            host = urlparse(item.get('href','')).netloc
+            if host:
+                hosts[host] = hosts.get(host, 0) + 1
+        except Exception:
+            pass
+    return {"count": len(links), "hosts": hosts}
+
+def extract_metadata_and_external(html):
+    try:
+        soup = BeautifulSoup(html, 'html.parser')
+        metadata = {}
+        def meta(name):
+            el = soup.find('meta', attrs={'name': name})
+            return el.get('content') if el and el.get('content') else None
+        metadata['keywords'] = meta('keywords')
+        metadata['viewport'] = meta('viewport')
+        metadata['description'] = meta('description')
+        metadata['format-detection'] = meta('format-detection')
+        stylesheets = []
+        for link in soup.find_all('link', rel=lambda v: v and 'stylesheet' in v):
+            href = link.get('href')
+            if href:
+                stylesheets.append(href)
+        external = {"stylesheet": {"links": stylesheets}}
+        return metadata, external, soup
+    except Exception:
+        return {}, {"stylesheet": {"links": []}}, None
+
+class DiskCache:
+    def __init__(self, base_dir='.cache'):
+        self.base_dir = pathlib.Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+    def key_for(self, url, params):
+        raw = json.dumps({"url": url, "params": params}, ensure_ascii=False, sort_keys=True)
+        return hashlib.md5(raw.encode('utf-8')).hexdigest()
+    def path_for(self, key):
+        return self.base_dir / f"{key}.html"
+    def get(self, key):
+        p = self.path_for(key)
+        if p.exists():
+            try:
+                return p.read_text(encoding='utf-8')
+            except Exception:
+                return None
+        return None
+    def set(self, key, value):
+        p = self.path_for(key)
+        try:
+            p.write_text(value, encoding='utf-8')
+        except Exception:
+            pass
 
 def process_url_text_mode(text, img_folder='images', cookies=None):
     """
