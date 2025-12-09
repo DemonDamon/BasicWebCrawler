@@ -232,7 +232,8 @@ def crawl_and_summarize(
     img_folder: str = "images",
     use_cookies: bool = False,
     cookies_file: Optional[str] = None,
-    save_originals: bool = True
+    save_originals: bool = True,
+    stream: bool = True
 ) -> str:
     """
     爬取多个URL并用大模型生成总结报告
@@ -249,6 +250,7 @@ def crawl_and_summarize(
         use_cookies: 是否使用cookies
         cookies_file: cookies文件路径
         save_originals: 是否保存原始爬取内容
+        stream: 是否使用流式输出（默认True），流式模式可以实时看到生成进度
         
     Returns:
         包含爬取和总结结果的字符串
@@ -357,7 +359,7 @@ def crawl_and_summarize(
     # 调用大模型
     messages = [{"role": "user", "content": summary_prompt}]
     start_time = time.time()
-    result = llm_client.chat_completion(messages)
+    result = llm_client.chat_completion(messages, stream=stream)
     end_time = time.time()
     
     if result.get("error"):

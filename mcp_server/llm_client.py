@@ -22,17 +22,32 @@ from openai import OpenAI
 
 # 配置日志
 # 注意：在 MCP 模式下，stdout 用于 JSON-RPC 通信，不能用于日志输出
-# 所以这里使用 stderr 和文件
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stderr),  # 改为 stderr，避免干扰 MCP 通信
-        logging.FileHandler('llm_client.log', encoding='utf-8')
-    ]
-)
+# 检测是否在 MCP 模式下运行（通过检查模块是否已导入）
+_is_mcp_mode = "mcp_server" in sys.modules or os.getenv("MCP_MODE", "").lower() == "true"
 
-logger = logging.getLogger(__name__)
+if _is_mcp_mode:
+    # MCP 模式下：只使用文件 handler，避免 INFO 日志输出到 stderr 被标记为错误
+    # 不调用 basicConfig，直接配置 logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    # 只添加文件 handler，不添加 stderr handler
+    if not logger.handlers:
+        file_handler = logging.FileHandler('llm_client.log', encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logger.addHandler(file_handler)
+        logger.propagate = False  # 阻止传播到根 logger
+else:
+    # 非 MCP 模式下：正常输出所有级别到 stderr 和文件
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stderr),
+            logging.FileHandler('llm_client.log', encoding='utf-8')
+        ]
+    )
+    logger = logging.getLogger(__name__)
 
 class LLMClient(ABC):
     """大模型客户端基类"""

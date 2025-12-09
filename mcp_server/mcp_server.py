@@ -16,10 +16,71 @@ import os
 import sys
 import time
 import tempfile
+import logging
 from typing import Dict, List, Optional, Any
 from urllib.parse import urlparse
 from pathlib import Path
 from contextlib import redirect_stdout
+
+# 自定义日志过滤器，过滤 FastMCP 的启动日志
+class FastMCPLogFilter(logging.Filter):
+    """过滤 FastMCP 框架的 INFO 级别日志"""
+    def filter(self, record):
+        # 过滤包含这些关键词的日志
+        skip_keywords = [
+            "Starting MCP server",
+            "Processing request of type",
+            "ListToolsRequest",
+            "ListPromptsRequest",
+            "ListResourcesRequest"
+        ]
+        message = record.getMessage()
+        return not any(keyword in message for keyword in skip_keywords)
+
+# 配置日志 - 使用 INFO 级别，避免被标记为错误
+# 注意：在导入 FastMCP 之前设置日志级别，以抑制框架的 INFO 日志
+
+# 设置环境变量，抑制 FastMCP 的详细日志
+os.environ.setdefault("MCP_LOG_LEVEL", "WARNING")
+os.environ.setdefault("FASTMCP_LOG_LEVEL", "WARNING")
+
+# 创建自定义 handler，添加过滤器
+stderr_handler = logging.StreamHandler(sys.stderr)
+stderr_handler.setFormatter(logging.Formatter('%(message)s'))
+stderr_handler.addFilter(FastMCPLogFilter())
+
+logging.basicConfig(
+    level=logging.WARNING,  # 先设置为 WARNING，避免 FastMCP 的 INFO 日志
+    format='%(message)s',
+    handlers=[stderr_handler],
+    force=True  # 强制重新配置，覆盖之前的配置
+)
+
+# 抑制 FastMCP 框架的 INFO 级别日志（避免显示 "Processing request" 等）
+# 尝试所有可能的 logger 名称
+for logger_name in [
+    "mcp", "fastmcp", "mcp.server", "mcp.server.server", 
+    "fastmcp.server", "fastmcp.server.server",
+    "__main__", "rich", "rich.logging"
+]:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
+    logging.getLogger(logger_name).propagate = False  # 阻止传播到父 logger
+
+# 创建我们自己的 logger，使用 INFO 级别
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+# 为我们的 logger 添加 handler
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter('%(message)s'))
+    logger.addHandler(handler)
+
+# 设置 crawler 模块的 logger
+try:
+    from crawler import set_crawler_logger
+    set_crawler_logger(logger)
+except ImportError:
+    pass
 
 # 添加父目录到Python路径，以便导入crawler模块
 sys.path.append(str(Path(__file__).parent.parent))
@@ -30,12 +91,22 @@ from crawler import (
     fetch_with_retry,
     process_url_text_mode,
     convert_html_to_markdown,
+    convert_html_to_text,
     render_with_actions,
     render_with_actions_threaded,
+    extract_metadata_and_external,
+    collect_links,
+    images_summary,
+    links_summary,
+    DiskCache,
     extract_urls_from_text,
     get_site_config,
     sanitize_filename
 )
+
+# 设置环境变量，标识当前在 MCP 模式下运行
+# 这样 llm_client.py 就能正确配置日志，避免 INFO 日志输出到 stderr
+os.environ["MCP_MODE"] = "true"
 
 # 导入大模型客户端
 try:
@@ -458,7 +529,14 @@ def interactive_crawl(
     cookies_file: Optional[str] = None,
     headers: Optional[Dict] = None,
     headless: bool = False,
-    timeout_ms: int = 15000
+    timeout_ms: int = 15000,
+    return_format: str = "markdown",
+    no_cache: bool = False,
+    retain_images: bool = True,
+    no_gfm: bool = False,
+    keep_img_data_url: bool = False,
+    with_images_summary: bool = False,
+    with_links_summary: bool = False
 ) -> str:
     try:
         # 自动检测项目根目录下的cookies文件
@@ -487,38 +565,78 @@ def interactive_crawl(
         img_dir = str(target_dir / img_folder)
         old_cwd = os.getcwd()
         os.chdir(str(target_dir))
+        cache = DiskCache()
+        params_for_cache = {
+            "actions": actions,
+            "headers": merged_headers,
+            "headless": headless,
+            "timeout_ms": timeout_ms
+        }
+        html = None
+        if not no_cache:
+            key = cache.key_for(url, params_for_cache)
+            html = cache.get(key)
         try:
             with redirect_stdout(sys.stderr):
                 start_time = time.time()
-                rendered_html = render_with_actions_threaded(url, actions, headers=merged_headers, cookies=cookies, headless=headless, timeout_ms=timeout_ms)
-                if not rendered_html:
+                if html is None:
+                    html = render_with_actions_threaded(url, actions, headers=merged_headers, cookies=cookies, headless=headless, timeout_ms=timeout_ms)
+                    if html:
+                        if not no_cache:
+                            cache.set(cache.key_for(url, params_for_cache), html)
+                if not html:
                     return "❌ 交互失败或无法获取页面内容"
-                markdown_output, page_title = convert_html_to_markdown(rendered_html, url, img_dir)
+                if return_format == "text":
+                    content_output, page_title = convert_html_to_text(html, url)
+                    file_ext = ".txt"
+                else:
+                    content_output, page_title = convert_html_to_markdown(html, url, img_dir, no_gfm=no_gfm, retain_images=retain_images, keep_img_data_url=keep_img_data_url)
+                    file_ext = ".md"
                 end_time = time.time()
         finally:
             os.chdir(old_cwd)
-        if markdown_output:
+        if content_output:
             sanitized_title = sanitize_filename(page_title)
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            output_file = f"{sanitized_title}_{timestamp}.md"
+            output_file = f"{sanitized_title}_{timestamp}{file_ext}"
             try:
                 output_path = target_dir / output_file
                 with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(markdown_output)
-                return f"✅ 交互+抓取成功！\n\n" \
-                       f"📄 页面标题: {page_title}\n" \
-                       f"🔗 URL: {url}\n" \
-                       f"📁 保存文件: {output_path}\n" \
-                       f"🖼️ 图片目录: {img_dir}/\n" \
-                       f"⏱️ 耗时: {end_time - start_time:.2f} 秒"
+                    f.write(content_output)
+                metadata, external, soup = extract_metadata_and_external(html)
+                links = collect_links(soup, url) if soup else []
+                result = {
+                    "title": page_title,
+                    "url": url,
+                    "format": return_format,
+                    "content": content_output,
+                    "metadata": metadata,
+                    "external": external,
+                    "summaries": {},
+                    "files": {
+                        "output_path": str(output_path),
+                        "images_dir": img_dir if not retain_images else None
+                    },
+                    "elapsed_seconds": round(end_time - start_time, 2)
+                }
+                if with_images_summary and not retain_images:
+                    result["summaries"]["images"] = images_summary(img_dir)
+                if with_links_summary:
+                    result["summaries"]["links"] = links_summary(links)
+                return json.dumps(result, ensure_ascii=False)
             except OSError:
                 fallback_filename = f"interactive_{timestamp}.md"
                 fallback_path = target_dir / fallback_filename
                 with open(fallback_path, 'w', encoding='utf-8') as f:
-                    f.write(markdown_output)
-                return f"✅ 交互+抓取成功（使用备用文件名）！\n文件: {fallback_filename}"
+                    f.write(content_output)
+                return json.dumps({
+                    "title": page_title,
+                    "url": url,
+                    "format": return_format,
+                    "files": {"output_path": str(fallback_path), "images_dir": img_dir if not retain_images else None}
+                }, ensure_ascii=False)
         else:
-            return "❌ 转换失败: 未生成Markdown内容"
+            return "❌ 转换失败"
     except Exception as e:
         return f"❌ 交互过程中发生错误: {str(e)}"
 
@@ -526,7 +644,7 @@ def interactive_crawl(
 def crawl_and_regenerate_with_llm(
     url: str = None,
     input_file: str = None,
-    provider: str = "deepseek",
+    provider: str = "bailian",
     model_name: Optional[str] = None,
     prompt_template: Optional[str] = None,
     img_folder: str = "images",
@@ -535,7 +653,8 @@ def crawl_and_regenerate_with_llm(
     cookies_file: Optional[str] = None,
     max_retries: int = 2,
     save_original: bool = True,
-    language: str = "中文"
+    language: str = "中文",
+    stream: bool = True
 ) -> str:
     """
     爬取网页内容并使用大模型进行二次生成（整理、翻译、格式化等）
@@ -553,6 +672,7 @@ def crawl_and_regenerate_with_llm(
         max_retries: 最大重试次数（默认2次，当使用input_file时此参数无效）
         save_original: 是否同时保存原始爬取内容（默认True）
         language: 目标语言（默认：中文）
+        stream: 是否使用流式输出（默认True），流式模式可以实时看到生成进度
         
     Returns:
         包含爬取和生成结果信息的字符串
@@ -575,7 +695,6 @@ def crawl_and_regenerate_with_llm(
         if input_file:
             # 使用已有文件
             import sys
-            sys.stderr.write(f"📄 使用已有文件: {input_file}\n")
             
             input_path = Path(input_file)
             if not input_path.exists():
@@ -590,7 +709,6 @@ def crawl_and_regenerate_with_llm(
         else:
             # 爬取网页内容
             import sys
-            sys.stderr.write(f"📡 爬取网页: {url}\n")
             
             # 处理 cookies
             cookies = None
@@ -631,17 +749,19 @@ def crawl_and_regenerate_with_llm(
         
         # 第二步：使用大模型进行二次生成
         import sys
-        sys.stderr.write(f"🤖 调用大模型进行内容重写...\n")
         
         # 加载环境变量
         LLMClientFactory.load_env_config()
         
         # 创建大模型客户端（设置更长的超时时间，用于处理长内容）
-        llm_client = LLMClientFactory.create_client(
-            provider=provider,
-            model_name=model_name,
-            timeout=300  # 5分钟超时，足够处理长内容
-        )
+        try:
+            llm_client = LLMClientFactory.create_client(
+                provider=provider,
+                model_name=model_name,
+                timeout=300  # 5分钟超时，足够处理长内容
+            )
+        except Exception as e:
+            return f"❌ 创建大模型客户端失败: {str(e)}\n\n请检查：\n1. API密钥是否正确配置\n2. 厂商名称是否正确（支持: siliconflow, deepseek, bailian, kimi）\n3. 模型名称是否有效"
         
         # 构建提示词
         if prompt_template is None:
@@ -667,8 +787,12 @@ def crawl_and_regenerate_with_llm(
         messages = [{"role": "user", "content": final_prompt}]
         
         start_time = time.time()
-        result = llm_client.chat_completion(messages)
+        result = llm_client.chat_completion(messages, stream=stream)
         end_time = time.time()
+        
+        # 防御性检查：确保 result 不为 None
+        if result is None:
+            return f"❌ 大模型调用失败: 返回结果为空"
         
         if result.get("error"):
             return f"❌ 大模型调用失败: {result['error']}"
@@ -693,6 +817,12 @@ def crawl_and_regenerate_with_llm(
             original_status = str(md_file_path)
         
         # 构建返回信息
+        # 防御性检查：确保 result 中的字段存在
+        provider_name = result.get('provider', 'Unknown')
+        model_name_result = result.get('model', 'Unknown')
+        usage_info = result.get('usage', {})
+        total_tokens = usage_info.get('total_tokens', 'N/A') if isinstance(usage_info, dict) else 'N/A'
+        
         result_info = f"""✅ {'内容重写' if input_file else '爬取并重写'}成功！
 
 {'='*60}
@@ -700,12 +830,12 @@ def crawl_and_regenerate_with_llm(
 {'='*60}
 {'🔗 URL: ' + url if url else '📄 输入文件: ' + input_file}
 📄 页面标题: {page_title}
-🏢 大模型厂商: {result['provider']}
-🤖 模型: {result['model']}
+🏢 大模型厂商: {provider_name}
+🤖 模型: {model_name_result}
 📝 原始内容: {len(original_content)} 字符
 📝 生成内容: {len(regenerated_content)} 字符
 ⏱️  生成耗时: {end_time - start_time:.2f} 秒
-💰 Token使用: {result.get('usage', {}).get('total_tokens', 'N/A')}
+💰 Token使用: {total_tokens}
 
 {'='*60}
 📁 文件信息

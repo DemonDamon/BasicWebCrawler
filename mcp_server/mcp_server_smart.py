@@ -11,10 +11,75 @@ BasicWebCrawler MCP Server - Smart Version
 
 import sys
 import os
+import logging
 from pathlib import Path
+
+# 自定义日志过滤器，过滤 FastMCP 的启动日志
+class FastMCPLogFilter(logging.Filter):
+    """过滤 FastMCP 框架的 INFO 级别日志"""
+    def filter(self, record):
+        # 过滤包含这些关键词的日志
+        skip_keywords = [
+            "Starting MCP server",
+            "Processing request of type",
+            "ListToolsRequest",
+            "ListPromptsRequest",
+            "ListResourcesRequest"
+        ]
+        message = record.getMessage()
+        return not any(keyword in message for keyword in skip_keywords)
 
 # 添加父目录到Python路径
 sys.path.append(str(Path(__file__).parent.parent))
+
+# 配置日志 - 使用 INFO 级别，避免被标记为错误
+# 注意：在导入 FastMCP 之前设置日志级别，以抑制框架的 INFO 日志
+
+# 设置环境变量，抑制 FastMCP 的详细日志
+os.environ.setdefault("MCP_LOG_LEVEL", "WARNING")
+os.environ.setdefault("FASTMCP_LOG_LEVEL", "WARNING")
+
+# 创建自定义 handler，添加过滤器
+stderr_handler = logging.StreamHandler(sys.stderr)
+stderr_handler.setFormatter(logging.Formatter('%(message)s'))
+stderr_handler.addFilter(FastMCPLogFilter())
+
+logging.basicConfig(
+    level=logging.WARNING,  # 先设置为 WARNING，避免 FastMCP 的 INFO 日志
+    format='%(message)s',
+    handlers=[stderr_handler],
+    force=True  # 强制重新配置，覆盖之前的配置
+)
+
+# 抑制 FastMCP 框架的 INFO 级别日志（避免显示 "Processing request" 等）
+# 尝试所有可能的 logger 名称
+for logger_name in [
+    "mcp", "fastmcp", "mcp.server", "mcp.server.server", 
+    "fastmcp.server", "fastmcp.server.server",
+    "__main__", "rich", "rich.logging"
+]:
+    logging.getLogger(logger_name).setLevel(logging.WARNING)
+    logging.getLogger(logger_name).propagate = False  # 阻止传播到父 logger
+
+# 创建我们自己的 logger，使用 INFO 级别
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+# 为我们的 logger 添加 handler
+if not logger.handlers:
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter('%(message)s'))
+    logger.addHandler(handler)
+
+# 设置 crawler 模块的 logger
+try:
+    from crawler import set_crawler_logger
+    set_crawler_logger(logger)
+except ImportError:
+    pass
+
+# 设置环境变量，标识当前在 MCP 模式下运行
+# 这样 llm_client.py 就能正确配置日志，避免 INFO 日志输出到 stderr
+os.environ["MCP_MODE"] = "true"
 
 # 导入增强版功能
 from mcp_server_enhanced import *
@@ -127,17 +192,17 @@ def smart_crawl_single_url(
     """
     import sys
     
-    sys.stderr.write(f"\n{'='*70}\n")
-    sys.stderr.write(f"🧠 智能爬取系统启动\n")
-    sys.stderr.write(f"{'='*70}\n")
-    sys.stderr.write(f"📍 URL: {url}\n")
-    sys.stderr.write(f"📁 输出: {output_dir}\n")
-    sys.stderr.write(f"{'='*70}\n\n")
+    logger.info(f"\n{'='*70}")
+    logger.info(f"🧠 智能爬取系统启动")
+    logger.info(f"{'='*70}")
+    logger.info(f"📍 URL: {url}")
+    logger.info(f"📁 输出: {output_dir}")
+    logger.info(f"{'='*70}\n")
     
     result_log = []
     
     # 第一步：快速检测
-    sys.stderr.write("🔍 第1步：检测网站特征...\n")
+    logger.info("🔍 第1步：检测网站特征...")
     detection = detect_js_requirement(url)
     
     result_log.append("=" * 70)
@@ -153,7 +218,6 @@ def smart_crawl_single_url(
     
     # 第二步：选择爬取策略
     if detection['needs_js'] and detection['confidence'] == 'high':
-        sys.stderr.write("\n✅ 检测到JS渲染网站，直接使用浏览器模式\n")
         result_log.append("📌 选择策略: 浏览器模式（跳过标准爬取）")
         result_log.append("")
         
@@ -165,7 +229,6 @@ def smart_crawl_single_url(
         return "\n".join(result_log)
     
     # 第三步：尝试标准爬取
-    sys.stderr.write("\n🌐 第2步：尝试标准爬取...\n")
     result_log.append("=" * 70)
     result_log.append("🌐 标准爬取尝试")
     result_log.append("=" * 70)
@@ -180,14 +243,11 @@ def smart_crawl_single_url(
     
     # 检查是否成功
     if "❌" not in crawl_result and "失败" not in crawl_result:
-        sys.stderr.write("✅ 标准爬取成功\n")
         result_log.append("✅ 标准爬取成功")
         result_log.append("")
         result_log.append(crawl_result)
         
         # 第四步：质量检查
-        sys.stderr.write("\n📊 第3步：质量评估...\n")
-        
         # 提取文件路径
         import re
         file_match = re.search(r'保存文件:\s*(.+\.md)', crawl_result)
@@ -214,7 +274,6 @@ def smart_crawl_single_url(
                 
                 # 第五步：决定是否使用LLM
                 if use_llm_if_low_quality and quality['needs_rewrite']:
-                    sys.stderr.write("\n🤖 第4步：使用大模型优化内容...\n")
                     result_log.append("")
                     result_log.append("🤖 启动大模型优化...")
                     
@@ -241,14 +300,12 @@ def smart_crawl_single_url(
         return "\n".join(result_log)
     
     # 标准爬取失败 - 切换到浏览器模式
-    sys.stderr.write("\n❌ 标准爬取失败\n")
     result_log.append("❌ 标准爬取失败")
     result_log.append("")
     result_log.append(crawl_result)
     result_log.append("")
     
     if auto_switch_to_browser:
-        sys.stderr.write("\n🔄 第3步：切换到浏览器模式...\n")
         result_log.append("=" * 70)
         result_log.append("🔄 自动切换到浏览器模式")
         result_log.append("=" * 70)
@@ -278,7 +335,8 @@ def browser_extract_and_save(
     use_llm: bool = False,
     llm_provider: str = "deepseek",
     llm_model: Optional[str] = None,
-    custom_prompt: Optional[str] = None
+    custom_prompt: Optional[str] = None,
+    stream: bool = True
 ) -> str:
     """
     从浏览器提取的内容保存为Markdown文件
@@ -304,6 +362,7 @@ def browser_extract_and_save(
         llm_provider: 大模型厂商
         llm_model: 大模型名称
         custom_prompt: 自定义提示词
+        stream: 是否使用流式输出（默认True），流式模式可以实时看到生成进度
         
     Returns:
         保存结果信息
@@ -312,10 +371,6 @@ def browser_extract_and_save(
     from pathlib import Path
     from urllib.parse import urlparse
     from datetime import datetime
-    
-    sys.stderr.write(f"\n{'='*70}\n")
-    sys.stderr.write(f"💾 浏览器内容保存工具\n")
-    sys.stderr.write(f"{'='*70}\n")
     
     # 创建输出目录
     output_path = Path(output_dir).resolve()
@@ -353,7 +408,6 @@ def browser_extract_and_save(
     
     # 如果需要使用LLM优化
     if use_llm and LLM_AVAILABLE:
-        sys.stderr.write("🤖 使用大模型优化内容...\n")
         result_log.append("🤖 使用大模型优化内容...")
         
         try:
@@ -393,33 +447,48 @@ def browser_extract_and_save(
             # 调用大模型
             messages = [{"role": "user", "content": prompt}]
             start_time = time.time()
-            llm_result = llm_client.chat_completion(messages)
+            llm_result = llm_client.chat_completion(messages, stream=stream)
             end_time = time.time()
             
-            if llm_result.get("error"):
+            # 防御性检查：确保 llm_result 不为 None
+            if llm_result is None:
+                result_log.append(f"⚠️ 大模型调用失败: 返回结果为空")
+                result_log.append("📝 保存原始内容...")
+            elif llm_result.get("error"):
                 result_log.append(f"⚠️ 大模型调用失败: {llm_result['error']}")
                 result_log.append("📝 保存原始内容...")
             else:
                 optimized_content = llm_result.get("content", "")
                 
-                # 构建优化后的内容
-                md_content = f"""# {model_name}
+                # 防御性检查：确保有内容
+                if not optimized_content:
+                    result_log.append(f"⚠️ 大模型返回空内容")
+                    result_log.append("📝 保存原始内容...")
+                else:
+                    # 安全获取字段值
+                    provider_name = llm_result.get('provider', 'Unknown')
+                    model_name_result = llm_result.get('model', 'Unknown')
+                    usage_info = llm_result.get('usage', {})
+                    total_tokens = usage_info.get('total_tokens', 'N/A') if isinstance(usage_info, dict) else 'N/A'
+                    
+                    # 构建优化后的内容
+                    md_content = f"""# {model_name}
 
 > 来源: {current_url}
 > 爬取时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 > 方式: 浏览器提取 + 大模型优化
-> 大模型: {llm_result.get('provider')} - {llm_result.get('model')}
+> 大模型: {provider_name} - {model_name_result}
 > 处理时间: {end_time - start_time:.2f} 秒
 
 ---
 
 {optimized_content}
 """
-                
-                result_log.append(f"✅ 大模型优化完成")
-                result_log.append(f"   模型: {llm_result.get('provider')} - {llm_result.get('model')}")
-                result_log.append(f"   耗时: {end_time - start_time:.2f} 秒")
-                result_log.append(f"   Token: {llm_result.get('usage', {}).get('total_tokens', 'N/A')}")
+                    
+                    result_log.append(f"✅ 大模型优化完成")
+                    result_log.append(f"   模型: {provider_name} - {model_name_result}")
+                    result_log.append(f"   耗时: {end_time - start_time:.2f} 秒")
+                    result_log.append(f"   Token: {total_tokens}")
                 
         except Exception as e:
             result_log.append(f"⚠️ LLM处理失败: {e}")
@@ -490,12 +559,6 @@ def batch_browser_extract(
     import sys
     from pathlib import Path
     from urllib.parse import urlparse
-    
-    sys.stderr.write(f"\n{'='*70}\n")
-    sys.stderr.write(f"📋 批量浏览器提取任务\n")
-    sys.stderr.write(f"{'='*70}\n")
-    sys.stderr.write(f"URL数量: {len(urls)}\n")
-    sys.stderr.write(f"{'='*70}\n\n")
     
     result = []
     result.append("=" * 70)
