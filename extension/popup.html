@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>微信采集</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main>
+    <h1>微信采集</h1>
+    <p id="status" class="muted">就绪</p>
+    <div class="actions">
+      <button id="collectBtn" type="button">采集当前文章</button>
+      <button id="autoBtn" type="button" class="secondary">开始自动采集</button>
+    </div>
+    <p class="hint">请先在扩展选项中配置 API 地址与 Token。手动采集需停留在微信文章页。</p>
+    <a id="optionsLink" href="#">打开选项</a>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>采集后台 - 文章列表</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 24px; color: #1f2937; }
+    h1 { font-size: 1.5rem; margin-bottom: 8px; }
+    .toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    input, button { padding: 8px 12px; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 8px; text-align: left; vertical-align: top; }
+    th { background: #f9fafb; }
+    .muted { color: #6b7280; font-size: 12px; }
+    .error { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <h1>微信公众号采集后台</h1>
+  <p class="muted">M1 最小列表页。请在下方填写 API Token 后加载文章。</p>
+  <div class="toolbar">
+    <input id="token" type="password" placeholder="X-API-Token" style="min-width: 260px;" />
+    <button id="load">加载文章</button>
+    <span id="status" class="muted"></span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>标题</th>
+        <th>公众号</th>
+        <th>采集时间</th>
+        <th>来源</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <script>
+    const tokenInput = document.getElementById('token');
+    const statusEl = document.getElementById('status');
+    const rowsEl = document.getElementById('rows');
+
+    async function loadArticles() {
+      const token = tokenInput.value.trim();
+      if (!token) {
+        statusEl.textContent = '请先填写 API Token';
+        statusEl.className = 'error';
+        return;
+      }
+      statusEl.textContent = '加载中...';
+      statusEl.className = 'muted';
+      rowsEl.innerHTML = '';
+      try {
+        const resp = await fetch('/admin/articles?limit=100', {
+          headers: { 'X-API-Token': token }
+        });
+        if (!resp.ok) {
+          throw new Error('HTTP ' + resp.status);
+        }
+        const data = await resp.json();
+        statusEl.textContent = '共 ' + data.length + ' 条';
+        rowsEl.innerHTML = data.map(item => `
+          <tr>
+            <td>${item.id}</td>
+            <td><a href="${item.url}" target="_blank" rel="noopener">${item.title}</a></td>
+            <td>${item.account_name || '-'}</td>
+            <td>${item.collected_at || '-'}</td>
+            <td>${item.source || '-'}</td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        statusEl.textContent = '加载失败: ' + err.message;
+        statusEl.className = 'error';
+      }
+    }
+
+    document.getElementById('load').addEventListener('click', loadArticles);
+  </script>
+</body>
+</html>

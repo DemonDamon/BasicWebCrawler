@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>采集健康度</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 24px; color: #1f2937; }
+    h1 { font-size: 1.5rem; }
+    .toolbar { display: flex; gap: 12px; align-items: center; margin: 16px 0; flex-wrap: wrap; }
+    input, button { padding: 8px 12px; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 10px 8px; text-align: left; }
+    th { background: #f9fafb; }
+    .warn { color: #b45309; font-weight: 600; }
+    .critical { color: #b91c1c; font-weight: 600; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; background: #fff; }
+    .card .label { color: #6b7280; font-size: 12px; }
+    .card .value { font-size: 20px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>覆盖率与健康度</h1>
+  <div class="toolbar">
+    <input id="token" type="password" placeholder="X-API-Token" style="min-width:260px" />
+    <button id="refreshBtn">刷新指标</button>
+    <a href="/admin">返回文章列表</a>
+  </div>
+  <div id="cards" class="cards"></div>
+  <h2>公众号健康度</h2>
+  <table>
+    <thead>
+      <tr><th>账号</th><th>组织</th><th>状态</th><th>7天文章</th><th>连续失败</th><th>预警原因</th></tr>
+    </thead>
+    <tbody id="healthRows"></tbody>
+  </table>
+  <h2>告警</h2>
+  <ul id="alerts"></ul>
+  <script>
+    const tokenInput = document.getElementById('token');
+    async function authHeaders() {
+      return { 'X-API-Token': tokenInput.value.trim(), 'Content-Type': 'application/json' };
+    }
+    function pct(v) { return v == null ? '-' : (v * 100).toFixed(1) + '%'; }
+    document.getElementById('refreshBtn').addEventListener('click', async () => {
+      const headers = await authHeaders();
+      const [coverage, health, refresh] = await Promise.all([
+        fetch('/api/coverage/report', { headers }).then(r => r.json()),
+        fetch('/api/accounts/health?limit=200', { headers }).then(r => r.json()),
+        fetch('/api/monitoring/refresh', { method: 'POST', headers, body: '{}' }).then(r => r.json()),
+      ]);
+      document.getElementById('cards').innerHTML = `
+        <div class="card"><div class="label">组织覆盖率</div><div class="value">${pct(coverage.account_coverage_rate)}</div></div>
+        <div class="card"><div class="label">采集成功率</div><div class="value">${pct(coverage.crawl_success_rate)}</div></div>
+        <div class="card"><div class="label">待采集</div><div class="value">${coverage.candidate_pending}</div></div>
+        <div class="card"><div class="label">人工队列</div><div class="value">${coverage.manual_queue_count}</div></div>
+        <div class="card"><div class="label">重试队列</div><div class="value">${coverage.retry_queue_count}</div></div>
+        <div class="card"><div class="label">发现源预警</div><div class="value">${coverage.discovery_sources_warning}</div></div>
+      `;
+      document.getElementById('healthRows').innerHTML = health.map(row => `
+        <tr>
+          <td>${row.account_name}</td>
+          <td>${row.org_name || '-'}</td>
+          <td class="${row.status === 'warning' ? 'warn' : ''}">${row.status}</td>
+          <td>${row.article_count_7d}</td>
+          <td>${row.consecutive_failures}</td>
+          <td>${row.warning_reason || '-'}</td>
+        </tr>
+      `).join('');
+      document.getElementById('alerts').innerHTML = refresh.alerts.map(a =>
+        `<li class="${a.severity}">[${a.code}] ${a.message}</li>`
+      ).join('') || '<li>暂无告警</li>';
+    });
+  </script>
+</body>
+</html>

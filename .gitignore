@@ -52,3 +52,7 @@ thirdparty/
 
 prds/
 .dev_log/
+
+# WeChat collector local DB
+wechat_collector.db
+samples/snapshots/wechat_parse_fail_*.html

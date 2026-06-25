@@ -1,0 +1,22 @@
+{
+  "wechat_article": {
+    "title": [
+      "meta[property='og:title']",
+      "#activity-name"
+    ],
+    "account_name": [
+      "#js_name",
+      ".profile_nickname"
+    ],
+    "content": [
+      "#js_content"
+    ],
+    "cover": [
+      "meta[property='og:image']"
+    ],
+    "publish_time": [
+      "#publish_time",
+      "meta[property='og:article:published_time']"
+    ]
+  }
+}

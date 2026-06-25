@@ -539,6 +539,162 @@ SITE_CONFIGS = {
    - 检查配置文件路径是否正确
    - 验证Python环境和依赖是否安装
 
+## 微信公众号定向采集系统（wechat_collector）
+
+基于 BasicWebCrawler 延伸的采集子系统，目标是对 3000+ 组织做「多源发现 + 浏览器插件采集 + 队列去重 + 覆盖率监控」。详见 `.cursor/plans/2026-06-25-wechat-org-collector-master.plan.md`。
+
+### 目录结构
+
+```
+wechat_collector/          # 采集后端（FastAPI + SQLAlchemy）
+├── config.py              # 环境变量配置
+├── db/                    # ORM 与数据库连接
+├── migrations/            # Alembic 迁移
+└── parsers/wechat.json    # 微信文章解析选择器（P5 完善）
+extension/                 # Chrome 插件（P6 实现）
+```
+
+### 安装
+
+```bash
+pip install -r requirements-collector.txt
+cp .env.example .env
+# 编辑 .env 中的 COLLECTOR_DB_URL / COLLECTOR_API_TOKEN
+```
+
+默认使用 SQLite（`sqlite:///./wechat_collector.db`）。生产环境可切换 PostgreSQL：
+
+```bash
+COLLECTOR_DB_URL=postgresql+psycopg2://user:password@localhost:5432/wechat_collector
+```
+
+### 数据库迁移
+
+```bash
+alembic upgrade head
+```
+
+验证模型可导入：
+
+```bash
+python -c "from wechat_collector.db import models; print('ok')"
+pytest tests/test_collector_models.py -q
+```
+
+### 组织主数据导入（P2）
+
+```bash
+python -m wechat_collector.io.import_orgs samples/orgs_template.csv
+```
+
+模板字段：`org_code`, `org_name`, `aliases`（JSON 数组或分号分隔）, `region`, `org_level`, `official_website`, `priority`, `status`。
+
+### 微信文章解析（P5）
+
+```python
+from pathlib import Path
+from wechat_collector.parsers.wechat import parse_wechat_article_html
+
+html = Path("samples/snapshots/wechat_article_sample.html").read_text()
+result = parse_wechat_article_html(html, url="https://mp.weixin.qq.com/s/xxx")
+print(result.title, result.content_text, result.content_hash)
+```
+
+选择器配置见 `wechat_collector/parsers/wechat.json`，页面变更时优先改配置。
+
+### 候选池与任务队列（P3）
+
+```python
+from wechat_collector.db.base import SessionLocal
+from wechat_collector.services import candidate_service
+
+with SessionLocal() as db:
+    candidate, created = candidate_service.enqueue_candidate(
+        db,
+        url="https://mp.weixin.qq.com/s?__biz=...&mid=1&idx=1&sn=noise",
+        org_id=1,
+        source="bing_search",
+    )
+    task = candidate_service.get_next_task(db)  # pending/retrying -> processing
+    candidate_service.mark_success(db, task.id)
+```
+
+URL 去重基于 `normalized_url`（保留 `__biz/mid/idx`，去掉 `sn/chksm/scene` 等追踪参数）。
+
+### 启动采集 API（P4）
+
+```bash
+export COLLECTOR_API_TOKEN=your-token   # 或写入 .env
+uvicorn wechat_collector.api.app:app --reload --port 8787
+```
+
+- 健康检查：`GET /healthz`（无需 Token）
+- 后台列表：`http://127.0.0.1:8787/admin`（页面内填写 Token 后加载）
+- 采集接口：请求头携带 `X-API-Token`，可选 `X-Client-Id` / `X-Plugin-Version` / `X-Operator`
+
+主要接口：`POST /api/articles`、`POST /api/candidates`、`GET /api/crawl/tasks/next`、`GET /api/coverage/report`、`GET /admin/articles`
+
+### Chrome 采集插件（P6）
+
+插件目录：`extension/`。开发者模式加载后，在选项页配置 API 地址与 Token。
+
+```bash
+# 1. 启动 API
+uvicorn wechat_collector.api.app:app --reload --port 8787
+
+# 2. Chrome → chrome://extensions → 加载已解压的扩展程序 → 选择 extension/
+# 3. 打开微信文章页 → 扩展弹窗 →「采集当前文章」
+```
+
+详见 `extension/README.md`（含 M2 自动采集说明）。
+
+### 多源发现（P7）
+
+```bash
+# CLI：对活跃组织跑 Bing/Baidu/搜狗/官网发现，写入候选池
+python -m wechat_collector.io.run_discovery --limit 20
+
+# API（需 Token）
+curl -X POST http://127.0.0.1:8787/api/discovery/run \
+  -H "X-API-Token: $COLLECTOR_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 20}'
+```
+
+发现源可插拔（`wechat_collector/discovery/providers/`），单源连续空结果会记录到 `discovery_source_stats` 并触发切源信号（P9 告警）。
+
+### 调度 / 重试 / 风控（P8）
+
+- 任务领取：`GET /api/crawl/tasks/next` 按组织优先级排序，仅取 `pending` 或已到期的 `retrying`。
+- 失败退避：10 分钟 → 1 小时 → 6 小时，第 4 次失败进入 `manual` 人工队列。
+- 账号限频：同一公众号在 `SCHEDULER_MAX_ACCOUNT_INTERVAL_SECONDS`（默认 60s）内不重复取任务。
+
+环境变量：`SCHEDULER_MAX_ACCOUNT_INTERVAL_SECONDS`、`SCHEDULER_EMPTY_SOURCE_THRESHOLD`、`DISCOVERY_REQUEST_DELAY_SECONDS`。
+
+### 覆盖率与健康度监控（P9）
+
+```bash
+# 刷新 account_health 与汇总指标
+curl -X POST http://127.0.0.1:8787/api/monitoring/refresh \
+  -H "X-API-Token: $COLLECTOR_API_TOKEN"
+
+# 获取当前告警
+curl http://127.0.0.1:8787/api/monitoring/alerts \
+  -H "X-API-Token: $COLLECTOR_API_TOKEN"
+```
+
+- 覆盖率报表：`GET /api/coverage/report`（含账号覆盖率、人工/重试队列、平均采集延迟、发现源预警）
+- 健康度页面：`http://127.0.0.1:8787/admin/health-page`
+
+### 数据表
+
+- `organizations` — 组织主数据
+- `wechat_accounts` — 公众号账号
+- `article_candidates` — 文章候选池（队列）
+- `articles` — 已采集正文
+- `account_health` — 公众号健康度
+- `discovery_source_stats` — 发现源运行统计（P7/P9）
+
 ## 贡献指南
 
 欢迎提交Issue和Pull Request来改进项目。在提交代码前，请确保：

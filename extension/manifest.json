@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "微信公众号定向采集",
+  "description": "在浏览器中采集微信公众号文章并回传 BasicWebCrawler 采集服务",
+  "version": "0.1.0",
+  "permissions": ["storage", "tabs", "alarms"],
+  "host_permissions": [
+    "*://mp.weixin.qq.com/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "微信采集"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://mp.weixin.qq.com/s/*",
+        "*://mp.weixin.qq.com/s?*",
+        "*://mp.weixin.qq.com/mp/appmsgshow*"
+      ],
+      "js": ["lib/parser.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

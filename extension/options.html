@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>微信采集 - 选项</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main>
+    <h1>采集服务配置</h1>
+    <form id="optionsForm">
+      <label>
+        API Base URL
+        <input id="apiBaseUrl" type="url" placeholder="http://127.0.0.1:8787" required />
+      </label>
+      <label>
+        API Token
+        <input id="apiToken" type="password" placeholder="X-API-Token" required />
+      </label>
+      <label>
+        Client ID
+        <input id="clientId" type="text" placeholder="chrome-extension" />
+      </label>
+      <label>
+        自动采集轮询间隔（分钟）
+        <input id="pollIntervalMinutes" type="number" min="0.5" step="0.5" value="1" />
+      </label>
+      <label>
+        任务间隔（毫秒）
+        <input id="minDelayMs" type="number" min="3000" step="1000" value="8000" />
+      </label>
+      <label class="checkbox">
+        <input id="stopOnBlock" type="checkbox" checked />
+        遇到验证码/风控提示时自动停止
+      </label>
+      <div class="actions">
+        <button type="submit">保存</button>
+        <button id="testBtn" type="button" class="secondary">测试连接</button>
+      </div>
+    </form>
+    <p id="status" class="muted"></p>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
