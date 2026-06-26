@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CandidateCreateBody(BaseModel):
@@ -53,6 +53,29 @@ class ArticleIngestBody(BaseModel):
     account_id: int | None = None
     candidate_id: int | None = None
     source: str | None = None
+
+    @field_validator("publish_time", mode="before")
+    @classmethod
+    def _coerce_publish_time(cls, v: object) -> object:
+        """宽松解析日期字符串，支持中文格式和 Unix 时间戳。"""
+        if v is None or isinstance(v, datetime):
+            return v
+        if isinstance(v, (int, float)):
+            # Unix 时间戳（秒）
+            return datetime.fromtimestamp(v)
+        if isinstance(v, str):
+            import re
+            # 中文格式：2026年6月25日 或 2026年06月25日 10:30
+            m = re.match(
+                r"(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日(?:\s+(\d{1,2}):(\d{2}))?",
+                v.strip(),
+            )
+            if m:
+                y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                hh = int(m.group(4) or 0)
+                mm = int(m.group(5) or 0)
+                return datetime(y, mo, d, hh, mm)
+        return v
 
 
 class ArticleIngestResponse(BaseModel):

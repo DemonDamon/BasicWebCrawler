@@ -117,7 +117,7 @@ async function collectFromTab(tabId, taskMeta = {}) {
     account_name: article.account_name,
     url: article.url,
     canonical_url: article.canonical_url,
-    publish_time: article.publish_time || null,
+    publish_time: normalizePublishTime(article.publish_time) || null,
     cover_url: article.cover_url,
     summary: article.summary,
     content_html: article.content_html,
@@ -160,6 +160,24 @@ function waitForTabComplete(tabId, timeoutMs = 30000) {
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 把各种微信日期格式统一转成 ISO 8601 字符串，方便服务端 Pydantic 解析。
+ * 支持：
+ *   "2026年6月25日"  → "2026-06-25T00:00:00"
+ *   "2026年6月25日 10:30"  → "2026-06-25T10:30:00"
+ *   "2026-06-25"    → 原样保留
+ *   ISO 格式        → 原样保留
+ */
+function normalizePublishTime(raw) {
+  if (!raw) return null;
+  const chinese = raw.match(/(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (chinese) {
+    const [, y, m, d, hh = "00", mm = "00"] = chinese;
+    return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T${String(hh).padStart(2, "0")}:${mm}:00`;
+  }
+  return raw;
 }
 
 async function processAutoQueue() {
