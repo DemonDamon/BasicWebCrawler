@@ -574,7 +574,7 @@ wechat_collector/
 ├── api/               # FastAPI 路由（articles / candidates / accounts / admin 等）
 ├── db/                # SQLAlchemy ORM + SessionLocal
 ├── discovery/         # 多源发现层
-│   └── providers/     # bing / baidu / sogou / rsshub（RSSHub 巡检）
+│   └── providers/     # bing / baidu / sogou / rsshub / sogou_playwright
 ├── io/                # 命令行工具脚本
 │   ├── import_wechat_accounts.py   # 批量导入公众号 CSV
 │   ├── enqueue_wechat_urls.py      # URL 批量入候选池
@@ -585,7 +585,8 @@ wechat_collector/
 ├── services/          # 业务逻辑（article / candidate / org）
 ├── worker/
 │   ├── fetch_worker.py   # 候选池消费 Worker（fetch + parse + 入库）
-│   └── rss_poller.py     # RSS 巡检 Worker（定期发现新文章 URL）
+│   ├── rss_poller.py     # RSS 巡检 Worker（定期发现新文章 URL）
+│   └── sogou_poller.py   # Playwright 搜狗发现 Worker
 └── README.md          # 完整使用手册
 extension/             # Chrome MV3 插件（手动 M1 + 自动队列 M2）
 samples/               # 示例 CSV 和 HTML 快照
@@ -612,6 +613,9 @@ python -m wechat_collector.worker
 
 # Worker 2：RSS 巡检（定期拉取各账号新文章 URL，默认每 30min）
 python -m wechat_collector.worker.rss_poller
+
+# Worker 3：Playwright 搜狗发现（推荐，需 SOGOU_PLAYWRIGHT_ENABLED=true）
+SOGOU_PLAYWRIGHT_ENABLED=true python -m wechat_collector.worker.sogou_poller
 ```
 
 ### RSSHub 自动巡检（全自动发现）

@@ -29,6 +29,18 @@ class Settings(BaseSettings):
     rss_request_delay_max_seconds: float = 5.0     # 每条路由请求后最长等待
     rss_request_timeout_seconds: int = 15          # RSS 请求超时
 
+    # Playwright 搜狗发现（默认关闭，需显式开启）
+    sogou_playwright_enabled: bool = False
+    sogou_poll_interval_seconds: int = 14400       # 巡检间隔（4h）
+    sogou_max_articles_per_account: int = 5        # 每账号每轮最多跟随跳转的文章数
+    sogou_user_data_dir: str = ".playwright/sogou"  # 持久化浏览器 profile（养 cookie）
+    sogou_headless: bool = True
+    sogou_article_delay_min_seconds: float = 1.5   # 文章跳转间最短等待
+    sogou_article_delay_max_seconds: float = 3.0   # 文章跳转间最长等待
+    sogou_account_delay_min_seconds: float = 3.0   # 账号间最短等待
+    sogou_account_delay_max_seconds: float = 6.0   # 账号间最长等待
+    sogou_page_timeout_ms: int = 30000             # 页面加载超时（毫秒）
+
     @property
     def is_sqlite(self) -> bool:
         return self.collector_db_url.startswith("sqlite")

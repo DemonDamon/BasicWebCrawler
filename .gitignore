@@ -55,4 +55,5 @@ prds/
 
 # WeChat collector local DB
 wechat_collector.db
+.playwright/
 samples/snapshots/wechat_parse_fail_*.html
