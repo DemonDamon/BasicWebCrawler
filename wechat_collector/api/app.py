@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from wechat_collector.api.routers import admin, articles, candidates, coverage, discovery, health, monitoring, tasks
+from wechat_collector.api.routers import accounts, admin, articles, candidates, coverage, discovery, health, monitoring, tasks
 
 app = FastAPI(
     title="WeChat Org Collector API",
@@ -15,6 +15,7 @@ app.include_router(health.router, prefix="/api")
 app.include_router(coverage.router, prefix="/api")
 app.include_router(discovery.router, prefix="/api")
 app.include_router(monitoring.router, prefix="/api")
+app.include_router(accounts.router, prefix="/api")
 app.include_router(admin.router)
 
 

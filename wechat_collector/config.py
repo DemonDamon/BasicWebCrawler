@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     worker_idle_sleep_seconds: float = 60.0  # 队列为空时的轮询间隔
     worker_fetch_timeout_seconds: int = 20   # 单次 HTTP 请求超时
 
+    # RSSHub 巡检配置
+    rsshub_base_url: str = "http://127.0.0.1:1200"
+    rss_poll_interval_seconds: int = 1800          # 巡检轮询间隔（30min）
+    rss_request_delay_min_seconds: float = 2.0     # 每条路由请求后最短等待
+    rss_request_delay_max_seconds: float = 5.0     # 每条路由请求后最长等待
+    rss_request_timeout_seconds: int = 15          # RSS 请求超时
+
     @property
     def is_sqlite(self) -> bool:
         return self.collector_db_url.startswith("sqlite")

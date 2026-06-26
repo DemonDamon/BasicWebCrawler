@@ -57,6 +57,7 @@ class WechatAccount(Base):
     account_name: Mapped[str] = mapped_column(Text, nullable=False)
     wechat_id: Mapped[str | None] = mapped_column(String(128))
     biz: Mapped[str | None] = mapped_column(String(256))
+    rsshub_routes: Mapped[list[Any] | None] = mapped_column(JSON)
     alias_names: Mapped[list[Any] | None] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(32), default="active", server_default="active")
     last_verified_at: Mapped[datetime | None] = mapped_column(DateTime)
