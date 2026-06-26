@@ -7,6 +7,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   try {
+    if (typeof WechatArticleParser === "undefined") {
+      sendResponse({ ok: false, error: "解析器未加载，请刷新页面后重试" });
+      return true;
+    }
     const parsed = WechatArticleParser.parseWechatArticle(document, window.location.href);
     sendResponse({ ok: true, article: parsed });
   } catch (error) {

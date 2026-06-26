@@ -47,10 +47,16 @@ export async function apiFetch(path, options = {}) {
   }
 
   if (!response.ok) {
-    const detail =
-      typeof body === "object" && body?.detail
-        ? body.detail
-        : `HTTP ${response.status}`;
+    const raw = typeof body === "object" && body?.detail ? body.detail : null;
+    let detail;
+    if (Array.isArray(raw)) {
+      // FastAPI 422 validation errors: [{loc, msg, type}, ...]
+      detail = raw.map((e) => (typeof e === "object" ? e.msg || JSON.stringify(e) : String(e))).join("; ");
+    } else if (raw !== null && raw !== undefined) {
+      detail = typeof raw === "string" ? raw : JSON.stringify(raw);
+    } else {
+      detail = `HTTP ${response.status}`;
+    }
     throw new ApiError(detail, response.status, body);
   }
 
