@@ -76,8 +76,9 @@
 # 1. 安装依赖
 pip install -r requirements-collector.txt
 
-# 2. 编辑配置（项目根目录下的 .env）
-# 在 .env 里填写 COLLECTOR_API_TOKEN（随机字符串即可，见第 3 节）
+# 2. 复制配置模板并编辑
+cp .env.example .env
+# 编辑 .env，把 COLLECTOR_API_TOKEN 改成自己生成的随机字符串（见第 3 节）
 
 # 3. 初始化数据库（首次运行）
 alembic upgrade head
