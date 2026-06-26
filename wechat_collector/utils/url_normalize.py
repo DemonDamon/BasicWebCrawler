@@ -57,3 +57,20 @@ def is_same_wechat_article(url_a: str | None, url_b: str | None) -> bool:
     left = normalize_wechat_url(url_a)
     right = normalize_wechat_url(url_b)
     return bool(left and right and left == right)
+
+
+def extract_biz(url: str | None) -> str | None:
+    """从微信文章 URL 中提取 __biz 参数。
+
+    支持两种格式：
+      https://mp.weixin.qq.com/s?__biz=MzAxNDI4NTI4Mw==&mid=...
+      https://mp.weixin.qq.com/s/shortcode  （无 __biz，返回 None）
+    """
+    if not url:
+        return None
+    try:
+        parsed = urlparse(url)
+        biz = parse_qs(parsed.query).get("__biz")
+        return biz[0] if biz else None
+    except Exception:  # noqa: BLE001
+        return None

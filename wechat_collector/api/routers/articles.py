@@ -30,6 +30,7 @@ def create_article(
             content_html=body.content_html,
             content_text=body.content_text,
             source=body.source,
+            biz=body.biz,
         ),
         client,
     )

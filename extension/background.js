@@ -122,6 +122,7 @@ async function collectFromTab(tabId, taskMeta = {}) {
     summary: article.summary,
     content_html: article.content_html,
     content_text: article.content_text,
+    biz: article.biz || null,
   };
 
   try {

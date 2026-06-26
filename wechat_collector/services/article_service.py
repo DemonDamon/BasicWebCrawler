@@ -9,10 +9,10 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from wechat_collector.db.models import Article, ArticleCandidate
+from wechat_collector.db.models import Article, ArticleCandidate, WechatAccount
 from wechat_collector.services import candidate_service
 from wechat_collector.utils.hashing import compute_content_hash
-from wechat_collector.utils.url_normalize import normalize_wechat_url
+from wechat_collector.utils.url_normalize import extract_biz, normalize_wechat_url
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ class ArticleIngestInput:
     content_text: str | None = None
     content_hash: str | None = None
     source: str | None = None
+    biz: str | None = None  # 从 URL 或扩展上报的 __biz
 
 
 @dataclass
@@ -47,6 +48,14 @@ class ArticleIngestResult:
     article: Article
     created: bool
     duplicate_reason: str | None = None
+
+
+def _finalize_candidate_if_processing(db: Session, candidate_id: int | None) -> None:
+    if candidate_id is None:
+        return
+    candidate = db.get(ArticleCandidate, candidate_id)
+    if candidate and candidate.status == "processing":
+        candidate_service.mark_success(db, candidate_id)
 
 
 def ingest_article(
@@ -61,6 +70,7 @@ def ingest_article(
         existing = db.scalar(select(Article).where(Article.content_hash == content_hash))
         assert existing is not None
         _log_ingest(client, existing.id, created=False, reason="content_hash")
+        _finalize_candidate_if_processing(db, payload.candidate_id)
         return ArticleIngestResult(existing, False, "content_hash")
 
     if canonical_url:
@@ -69,11 +79,13 @@ def ingest_article(
         )
         if existing_canonical:
             _log_ingest(client, existing_canonical.id, created=False, reason="canonical_url")
+            _finalize_candidate_if_processing(db, payload.candidate_id)
             return ArticleIngestResult(existing_canonical, False, "canonical_url")
 
     existing_url = db.scalar(select(Article).where(Article.url == payload.url))
     if existing_url:
         _log_ingest(client, existing_url.id, created=False, reason="url")
+        _finalize_candidate_if_processing(db, payload.candidate_id)
         return ArticleIngestResult(existing_url, False, "url")
 
     article = Article(
@@ -95,10 +107,11 @@ def ingest_article(
     db.commit()
     db.refresh(article)
 
+    # 自动回填关联账号的 __biz
+    _try_backfill_biz(db, payload)
+
     if payload.candidate_id is not None:
-        candidate = db.get(ArticleCandidate, payload.candidate_id)
-        if candidate and candidate.status == "processing":
-            candidate_service.mark_success(db, payload.candidate_id)
+        _finalize_candidate_if_processing(db, payload.candidate_id)
 
     _log_ingest(client, article.id, created=True, reason=None)
     return ArticleIngestResult(article, True, None)
@@ -125,3 +138,23 @@ def _log_ingest(
         client.plugin_version if client else None,
         client.operator if client else None,
     )
+
+
+def _try_backfill_biz(db: Session, payload: ArticleIngestInput) -> None:
+    """尝试将 __biz 写回关联账号（仅当账号 biz 为 NULL 时）。"""
+    biz = payload.biz or extract_biz(payload.url) or extract_biz(payload.canonical_url)
+    if not biz:
+        return
+
+    account: WechatAccount | None = None
+    if payload.account_id:
+        account = db.get(WechatAccount, payload.account_id)
+    elif payload.account_name:
+        account = db.scalar(
+            select(WechatAccount).where(WechatAccount.account_name == payload.account_name).limit(1)
+        )
+
+    if account and not account.biz:
+        account.biz = biz
+        db.commit()
+        logger.info("backfill_biz account_id=%s account_name=%s biz=%s", account.id, account.account_name, biz)

@@ -66,6 +66,19 @@ function normalizeWechatUrl(url) {
   }
 }
 
+function extractBiz(url) {
+  try {
+    const parsed = new URL(url);
+    // 优先从 URL 参数取
+    const biz = parsed.searchParams.get("__biz");
+    if (biz) return biz;
+    // 部分页面把 __biz 写在 og:url meta 里，由调用方传入已解析的 URL
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function parseWechatArticle(document, url) {
   const blockReason = detectPageBlocked(document);
   const errors = blockReason ? [blockReason] : [];
@@ -85,6 +98,10 @@ function parseWechatArticle(document, url) {
     errors.push("title_not_found");
   }
 
+  // 从当前 URL 或 og:url meta 提取 __biz
+  const ogUrl = selectMeta(document, "og:url");
+  const biz = extractBiz(url) || extractBiz(ogUrl || "");
+
   return {
     title,
     account_name: selectFirst(document, WECHAT_SELECTORS.account_name),
@@ -95,6 +112,7 @@ function parseWechatArticle(document, url) {
     summary: content_text ? content_text.slice(0, 200) : null,
     content_html,
     content_text,
+    biz,
     errors,
     ok: Boolean(title && content_html && errors.length === 0),
   };

@@ -53,6 +53,7 @@ class ArticleIngestBody(BaseModel):
     account_id: int | None = None
     candidate_id: int | None = None
     source: str | None = None
+    biz: str | None = None  # 扩展上报的 __biz，用于自动回填账号
 
     @field_validator("publish_time", mode="before")
     @classmethod
