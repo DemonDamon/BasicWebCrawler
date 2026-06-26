@@ -33,7 +33,6 @@ collectBtn.addEventListener("click", async () => {
     if (!response?.ok) {
       throw new Error(response?.error || "采集失败");
     }
-
     const created = response.result?.ingest?.created;
     const title = response.result?.article?.title || "文章";
     setStatus(
@@ -41,7 +40,11 @@ collectBtn.addEventListener("click", async () => {
       created ? "success" : "muted"
     );
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : String(error), "error");
+    const msg = error instanceof Error ? error.message : String(error);
+    const friendly = /Receiving end does not exist|Could not establish/i.test(msg)
+      ? "请先刷新微信文章页，再点击采集"
+      : msg;
+    setStatus(friendly, "error");
   } finally {
     collectBtn.disabled = false;
   }
