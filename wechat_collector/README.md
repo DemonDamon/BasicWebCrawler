@@ -67,24 +67,28 @@
 
 ## 2. 快速开始（5 分钟）
 
+> ⚠️ **以下所有命令均在项目根目录下执行**（即 `BasicWebCrawler/` 目录，`wechat_collector/` 的上一级）：
+> ```bash
+> cd /path/to/BasicWebCrawler
+> ```
+
 ```bash
 # 1. 安装依赖
 pip install -r requirements-collector.txt
 
-# 2. 复制并编辑配置
-cp .env.example .env      # 如果没有 .env.example，直接编辑 .env
-# 在 .env 里填写 COLLECTOR_API_TOKEN（随机字符串即可）
+# 2. 编辑配置（项目根目录下的 .env）
+# 在 .env 里填写 COLLECTOR_API_TOKEN（随机字符串即可，见第 3 节）
 
-# 3. 初始化数据库
+# 3. 初始化数据库（首次运行）
 alembic upgrade head
 
 # 4. 导入试点公众号
 python -m wechat_collector.io.import_wechat_accounts samples/pilot_wechat_accounts.csv
 
-# 5. 启动 API 服务
+# 5. 启动 API 服务（保持终端窗口开着）
 uvicorn wechat_collector.api.app:app --reload --port 8787
 
-# 6. 安装 Chrome 插件，在浏览器里打开微信文章，点击「采集当前文章」
+# 6. 安装 Chrome 插件（见第 7 节），在浏览器里打开微信文章，点击「采集当前文章」
 # 7. 访问 http://127.0.0.1:8787/admin 查看结果
 ```
 
@@ -92,7 +96,7 @@ uvicorn wechat_collector.api.app:app --reload --port 8787
 
 ## 3. 环境配置
 
-编辑项目根目录下的 `.env` 文件：
+> 📁 在项目根目录（`BasicWebCrawler/`）编辑 `.env` 文件：
 
 ```bash
 # 数据库（默认用 SQLite，开发够用）
@@ -123,6 +127,8 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 ## 4. 初始化数据库
 
+> 📁 在项目根目录（`BasicWebCrawler/`）执行：
+
 ```bash
 # 首次运行：执行所有迁移脚本，建表
 alembic upgrade head
@@ -137,6 +143,8 @@ rm wechat_collector.db && alembic upgrade head
 ---
 
 ## 5. 导入公众号清单
+
+> 📁 在项目根目录（`BasicWebCrawler/`）执行。
 
 ### CSV 格式
 
@@ -174,6 +182,8 @@ python -m wechat_collector.io.import_wechat_accounts 你的清单.csv
 ---
 
 ## 6. 启动 API 服务
+
+> 📁 在项目根目录（`BasicWebCrawler/`）执行，启动后**保持该终端窗口开着**。
 
 ```bash
 # 开发模式（代码改动后自动重载）
@@ -241,6 +251,8 @@ uvicorn wechat_collector.api.app:app --host 0.0.0.0 --port 8787 --workers 2
 5. 想停止时点「**停止**」
 
 ### 方式 C：命令行批量入队 + Worker 后台处理
+
+> 📁 以下命令均在项目根目录（`BasicWebCrawler/`）执行。
 
 **适合**：有一批 URL 链接，无需打开浏览器，让 Worker 在后台自动处理。
 
@@ -325,6 +337,8 @@ sqlite3 wechat_collector.db \
 
 ## 10. Worker 常驻进程
 
+> 📁 在项目根目录（`BasicWebCrawler/`）执行。
+
 Worker 是一个持续运行的后台进程，消费候选池（方式 C 入队的 URL），随机间隔抓取以避免被反爬识别。
 
 ### 启动参数
@@ -395,6 +409,8 @@ python -m wechat_collector.io.import_wechat_accounts samples/pilot_wechat_accoun
 ---
 
 ## 12. 命令速查表
+
+> 📁 所有命令均在项目根目录（`BasicWebCrawler/`）执行。
 
 ```bash
 # ── 初始化 ──────────────────────────────────────
