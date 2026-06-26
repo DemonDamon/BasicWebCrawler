@@ -1,6 +1,7 @@
 import {
   ApiError,
   fetchNextTask,
+  importCandidates,
   ingestArticle,
   markTaskFailed,
   markTaskSuccess,
@@ -24,9 +25,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
 });
 
-chrome.alarms.onAlarm.addListener(async (alarm) => {
+chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === AUTO_ALARM) {
-    await processAutoQueue();
+    processAutoQueue().catch((error) => {
+      console.warn("[wechat-collector] auto poll failed:", error);
+    });
   }
 });
 
@@ -45,6 +48,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "PROCESS_AUTO_ONCE") {
     processAutoQueue()
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) =>
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      );
+    return true;
+  }
+
+  if (message?.type === "ENQUEUE_FROM_TAB") {
+    enqueueFromTab(message.tabId)
       .then((result) => sendResponse({ ok: true, result }))
       .catch((error) =>
         sendResponse({
@@ -234,4 +249,66 @@ async function processAutoQueue() {
     }
     await saveConfig({ busy: false });
   }
+}
+
+  /**
+   * 从 freewechat.com 列表页提取所有微信文章链接并批量入队。
+   * freewechat.com 的列表页链接格式有两种：
+   *   1. 直接的 mp.weixin.qq.com 文章链接
+   *   2. freewechat.com 内部文章链接 /a/{biz}/{id}/1
+   * 两种都收集并入队。
+   */
+async function enqueueFromTab(tabId) {
+  const [{ result: urls }] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      const seen = new Set();
+      const out = [];
+
+      function addUrl(href) {
+        const clean = (href || "").split("#")[0].trim();
+        if (!clean || seen.has(clean)) return;
+        seen.add(clean);
+        out.push(clean);
+      }
+
+      // 1. 直接在链接 href 中找 mp.weixin.qq.com
+      for (const a of document.querySelectorAll("a[href]")) {
+        const href = a.href || "";
+        if (/mp\.weixin\.qq\.com\/s/i.test(href)) {
+          addUrl(href);
+        }
+        // freewechat.com 内部文章链接
+        if (/freewechat\.com\/a\/[^/]+\/\d+\/\d/i.test(href)) {
+          addUrl(href);
+        }
+      }
+
+      // 2. 在 data-* 属性中搜 mp.weixin.qq.com（搜狗常用 data-url 等）
+      for (const el of document.querySelectorAll("[data-url],[data-link],[data-href]")) {
+        for (const attr of ["data-url", "data-link", "data-href"]) {
+          const val = el.getAttribute(attr) || "";
+          if (/mp\.weixin\.qq\.com\/s/i.test(val)) addUrl(val);
+        }
+      }
+
+      // 3. 全文搜索页面 HTML，正则提取所有 mp.weixin.qq.com/s/... 链接
+      // 搜狗等页面把 URL 藏在 JS 变量或 JSON 数据里
+      const html = document.documentElement.innerHTML;
+      const re = /https?:\/\/mp\.weixin\.qq\.com\/s\/[A-Za-z0-9_\-]+/gi;
+      let m;
+      while ((m = re.exec(html)) !== null) {
+        addUrl(m[0]);
+      }
+
+      return out;
+    },
+  });
+
+  if (!urls || urls.length === 0) {
+    throw new Error("当前页面未找到微信文章链接（已搜索链接、data属性、页面全文）");
+  }
+
+  const result = await importCandidates(urls, "sogou_search");
+  return { found: urls.length, ...result };
 }

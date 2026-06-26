@@ -71,6 +71,7 @@ def ingest_article(
         assert existing is not None
         _log_ingest(client, existing.id, created=False, reason="content_hash")
         _finalize_candidate_if_processing(db, payload.candidate_id)
+        _try_backfill_biz(db, payload)  # 重复文章也尝试回填 biz
         return ArticleIngestResult(existing, False, "content_hash")
 
     if canonical_url:
@@ -80,12 +81,14 @@ def ingest_article(
         if existing_canonical:
             _log_ingest(client, existing_canonical.id, created=False, reason="canonical_url")
             _finalize_candidate_if_processing(db, payload.candidate_id)
+            _try_backfill_biz(db, payload)  # 重复文章也尝试回填 biz
             return ArticleIngestResult(existing_canonical, False, "canonical_url")
 
     existing_url = db.scalar(select(Article).where(Article.url == payload.url))
     if existing_url:
         _log_ingest(client, existing_url.id, created=False, reason="url")
         _finalize_candidate_if_processing(db, payload.candidate_id)
+        _try_backfill_biz(db, payload)  # 重复文章也尝试回填 biz
         return ArticleIngestResult(existing_url, False, "url")
 
     article = Article(

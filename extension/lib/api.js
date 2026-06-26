@@ -28,13 +28,21 @@ export async function apiFetch(path, options = {}) {
     throw new ApiError("API Base URL 未配置", 0, null);
   }
   if (!config.apiToken) {
-    throw new ApiError("API Token 未配置", 0, null);
+    throw new ApiError("API Token 未配置，请在插件选项页填写与 .env 中 COLLECTOR_API_TOKEN 一致的值", 0, null);
   }
 
-  const response = await fetch(`${base}${path}`, {
-    ...options,
-    headers: await buildHeaders(options.headers),
-  });
+  let response;
+  try {
+    response = await fetch(`${base}${path}`, {
+      ...options,
+      headers: await buildHeaders(options.headers),
+    });
+  } catch (error) {
+    const hint =
+      "无法连接采集 API。请确认：1) uvicorn 已启动；2) 选项页地址为 http://127.0.0.1:8787（不要用 0.0.0.0）；3) Token 已保存并点击「测试连接」成功";
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new ApiError(`${hint}（${detail}）`, 0, null);
+  }
 
   const text = await response.text();
   let body = null;
@@ -92,9 +100,28 @@ export async function markTaskFailed(taskId, failReason) {
   });
 }
 
+export async function importCandidates(urls, source = "freewechat_listing") {
+  return apiFetch("/api/candidates/import", {
+    method: "POST",
+    body: JSON.stringify({ urls, source }),
+  });
+}
+
 export async function pingHealthz() {
   const config = await getConfig();
   const base = normalizeBaseUrl(config.apiBaseUrl);
-  const response = await fetch(`${base}/healthz`);
-  return response.ok;
+  if (!base) {
+    throw new ApiError("API Base URL 未配置", 0, null);
+  }
+  try {
+    const response = await fetch(`${base}/healthz`);
+    return response.ok;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new ApiError(
+      `无法连接 ${base}/healthz，请确认 API 已启动且地址为 http://127.0.0.1:8787（${detail}）`,
+      0,
+      null
+    );
+  }
 }

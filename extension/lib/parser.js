@@ -69,14 +69,43 @@ function normalizeWechatUrl(url) {
 function extractBiz(url) {
   try {
     const parsed = new URL(url);
-    // 优先从 URL 参数取
     const biz = parsed.searchParams.get("__biz");
     if (biz) return biz;
-    // 部分页面把 __biz 写在 og:url meta 里，由调用方传入已解析的 URL
     return null;
   } catch {
     return null;
   }
+}
+
+/**
+ * 从页面 script 标签中提取微信公众号的 __biz 值。
+ *
+ * 微信文章页实际格式（curl 验证）：
+ *   var biz = "MzA3MzI4MjgzMw==" || ""   ← 主要格式，window.biz 引用此变量
+ *   __biz = window.biz                    ← 后续赋值，不含实际值
+ *   "__biz":"MzA3..."                     ← JSON 格式（部分页面）
+ *   __biz=MzA3...&mid=...                 ← URL 参数格式（部分场景）
+ */
+function extractBizFromPage(document) {
+  const scripts = document.querySelectorAll("script");
+  for (const script of scripts) {
+    const text = script.textContent || "";
+
+    // 最常见：var biz = "MzA3MzI4MjgzMw==" || ""
+    let m = text.match(/var\s+biz\s*=\s*["']([A-Za-z0-9+/=]{8,})["']/);
+    if (m) return m[1];
+
+    if (!text.includes("__biz")) continue;
+
+    // JSON 键值：  "__biz":"MzA3..."
+    m = text.match(/"__biz"\s*:\s*"([A-Za-z0-9+/=]{8,})"/);
+    if (m) return m[1];
+
+    // URL 参数字符串：  __biz=MzA3...& 或 __biz=MzA3..."
+    m = text.match(/__biz=([A-Za-z0-9+/%]{8,})(?:&|"|')/);
+    if (m) return decodeURIComponent(m[1]);
+  }
+  return null;
 }
 
 function parseWechatArticle(document, url) {
@@ -98,9 +127,9 @@ function parseWechatArticle(document, url) {
     errors.push("title_not_found");
   }
 
-  // 从当前 URL 或 og:url meta 提取 __biz
+  // 从当前 URL 或 og:url meta 提取 __biz；若均无则从页面脚本中提取
   const ogUrl = selectMeta(document, "og:url");
-  const biz = extractBiz(url) || extractBiz(ogUrl || "");
+  const biz = extractBiz(url) || extractBiz(ogUrl || "") || extractBizFromPage(document);
 
   return {
     title,

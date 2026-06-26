@@ -20,5 +20,10 @@ export async function saveConfig(partial) {
 }
 
 export function normalizeBaseUrl(url) {
-  return (url || "").trim().replace(/\/+$/, "");
+  let normalized = (url || "").trim().replace(/\/+$/, "");
+  // 0.0.0.0 是服务端 bind 地址，浏览器/插件无法作为客户端连接
+  if (/^https?:\/\/0\.0\.0\.0(?::\d+)?$/i.test(normalized)) {
+    normalized = normalized.replace("0.0.0.0", "127.0.0.1");
+  }
+  return normalized;
 }

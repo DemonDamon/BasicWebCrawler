@@ -2,6 +2,7 @@ import { getConfig } from "./lib/storage.js";
 
 const statusEl = document.getElementById("status");
 const collectBtn = document.getElementById("collectBtn");
+const enqueueBtn = document.getElementById("enqueueBtn");
 const autoBtn = document.getElementById("autoBtn");
 const optionsLink = document.getElementById("optionsLink");
 
@@ -18,6 +19,20 @@ function setStatus(text, kind = "muted") {
 async function refreshAutoButton() {
   const config = await getConfig();
   autoBtn.textContent = config.autoCrawlEnabled ? "停止自动采集" : "开始自动采集";
+}
+
+async function checkCurrentTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.url) return;
+
+  const isFreeWechat = /freewechat\.com/i.test(tab.url);
+  const isSogou = /weixin\.sogou\.com\/weixin/i.test(tab.url);
+
+  if (isFreeWechat || isSogou) {
+    enqueueBtn.style.display = "";
+    enqueueBtn.dataset.tabId = String(tab.id);
+    enqueueBtn.textContent = isSogou ? "批量入队（搜狗）" : "批量入队（freewechat）";
+  }
 }
 
 collectBtn.addEventListener("click", async () => {
@@ -50,6 +65,22 @@ collectBtn.addEventListener("click", async () => {
   }
 });
 
+enqueueBtn.addEventListener("click", async () => {
+  enqueueBtn.disabled = true;
+  setStatus("提取链接中...", "muted");
+  try {
+    const tabId = Number(enqueueBtn.dataset.tabId);
+    const response = await chrome.runtime.sendMessage({ type: "ENQUEUE_FROM_TAB", tabId });
+    if (!response?.ok) throw new Error(response?.error || "入队失败");
+    const { found, created, merged, skipped } = response.result;
+    setStatus(`找到 ${found} 条，新增 ${created} 个候选`, "success");
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : String(error), "error");
+  } finally {
+    enqueueBtn.disabled = false;
+  }
+});
+
 autoBtn.addEventListener("click", async () => {
   autoBtn.disabled = true;
   try {
@@ -72,3 +103,4 @@ autoBtn.addEventListener("click", async () => {
 });
 
 refreshAutoButton();
+checkCurrentTab();

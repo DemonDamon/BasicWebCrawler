@@ -3,7 +3,7 @@
   "name": "微信公众号定向采集",
   "description": "在浏览器中采集微信公众号文章并回传 BasicWebCrawler 采集服务",
   "version": "0.1.0",
-  "permissions": ["storage", "tabs", "alarms"],
+  "permissions": ["storage", "tabs", "alarms", "scripting"],
   "host_permissions": [
     "*://mp.weixin.qq.com/*",
     "http://127.0.0.1/*",
@@ -25,7 +25,8 @@
       "matches": [
         "*://mp.weixin.qq.com/s/*",
         "*://mp.weixin.qq.com/s?*",
-        "*://mp.weixin.qq.com/mp/appmsgshow*"
+        "*://mp.weixin.qq.com/mp/appmsgshow*",
+        "*://freewechat.com/a/*/*"
       ],
       "js": ["lib/parser.js", "content.js"],
       "run_at": "document_idle"
