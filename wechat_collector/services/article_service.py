@@ -125,6 +125,10 @@ def list_articles(db: Session, *, limit: int = 50, offset: int = 0) -> list[Arti
     return list(db.scalars(stmt))
 
 
+def get_article(db: Session, article_id: int) -> Article | None:
+    return db.get(Article, article_id)
+
+
 def _log_ingest(
     client: ClientContext | None,
     article_id: int,

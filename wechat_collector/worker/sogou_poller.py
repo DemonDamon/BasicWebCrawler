@@ -97,18 +97,17 @@ def run_poll_round(provider: SogouPlaywrightDiscoveryProvider) -> dict[str, int]
 
             result = provider.discover(org, [])
 
-            if result.error == "antispider":
-                stats["errors"] += 1
-                logger.warning(
-                    "检测到搜狗反爬/验证码，停止本轮 | org=%s",
-                    org.org_name,
-                )
-                _record_source_run(db, "sogou_playwright", 0, "antispider")
-                break
-
             if result.error:
                 stats["errors"] += 1
-                logger.warning("org=%s sogou 发现错误: %s", org.org_name, result.error)
+                if result.error == "antispider":
+                    logger.warning(
+                        "检测到搜狗反爬/验证码，跳过当前 org=%s，继续下一个",
+                        org.org_name,
+                    )
+                else:
+                    logger.warning(
+                        "org=%s sogou 发现错误: %s", org.org_name, result.error
+                    )
 
             accepted = 0
             merged = 0
@@ -188,44 +187,55 @@ def run_poller(*, interval: int | None = None, once: bool = False) -> None:
 
     round_count = 0
 
-    with sync_playwright() as playwright:
-        context = playwright.chromium.launch_persistent_context(
-            user_data_dir=str(user_data_dir),
-            headless=cfg.sogou_headless,
-            user_agent=DEFAULT_USER_AGENT,
-            locale="zh-CN",
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        page = context.pages[0] if context.pages else context.new_page()
-
-        try:
-            while not _SHUTDOWN:
-                round_count += 1
-                logger.info("── 第 %d 轮搜狗发现开始 ──", round_count)
-
-                provider = SogouPlaywrightDiscoveryProvider(page)
-                stats = run_poll_round(provider)
-
-                if stats["orgs"] == 0:
-                    logger.info("暂无活跃试点组织，跳过本轮")
-                else:
-                    logger.info(
-                        "第 %d 轮完成 | 组织=%d 新增=%d 合并=%d 跳过=%d 错误=%d",
-                        round_count,
-                        stats["orgs"],
-                        stats["created"],
-                        stats["merged"],
-                        stats["skipped"],
-                        stats["errors"],
+    try:
+        with sync_playwright() as playwright:
+            try:
+                context = playwright.chromium.launch_persistent_context(
+                    user_data_dir=str(user_data_dir),
+                    headless=cfg.sogou_headless,
+                    user_agent=DEFAULT_USER_AGENT,
+                    locale="zh-CN",
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
+            except Exception as exc:
+                if "Executable doesn't exist" in str(exc):
+                    logger.error(
+                        "Chromium 未安装。请执行: playwright install chromium"
                     )
+                    raise SystemExit(1) from exc
+                raise
+            page = context.pages[0] if context.pages else context.new_page()
 
-                if once:
-                    break
+            try:
+                while not _SHUTDOWN:
+                    round_count += 1
+                    logger.info("── 第 %d 轮搜狗发现开始 ──", round_count)
 
-                logger.info("等待 %ds 后开始下一轮…", poll_interval)
-                _interruptible_sleep(poll_interval)
-        finally:
-            context.close()
+                    provider = SogouPlaywrightDiscoveryProvider(page)
+                    stats = run_poll_round(provider)
+
+                    if stats["orgs"] == 0:
+                        logger.info("暂无活跃试点组织，跳过本轮")
+                    else:
+                        logger.info(
+                            "第 %d 轮完成 | 组织=%d 新增=%d 合并=%d 跳过=%d 错误=%d",
+                            round_count,
+                            stats["orgs"],
+                            stats["created"],
+                            stats["merged"],
+                            stats["skipped"],
+                            stats["errors"],
+                        )
+
+                    if once:
+                        break
+
+                    logger.info("等待 %ds 后开始下一轮…", poll_interval)
+                    _interruptible_sleep(poll_interval)
+            finally:
+                context.close()
+    except SystemExit:
+        raise
 
     logger.info("Sogou Poller 已停止，共完成 %d 轮巡检", round_count)
 

@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     sogou_account_delay_min_seconds: float = 3.0   # 账号间最短等待
     sogou_account_delay_max_seconds: float = 6.0   # 账号间最长等待
     sogou_page_timeout_ms: int = 30000             # 页面加载超时（毫秒）
+    sogou_max_queries_per_org: int = 4             # 每 org 多角度搜索词数（名/年月/年…）
+    # 搜狗 tsn URL 参数已失效（会跳首页）；保留配置项兼容，实际靠 publish_time 过滤
+    sogou_time_range_tsn: int = 0
+    # 发现/抓取时丢弃发布时间早于 N 天的文章；0=不限制
+    sogou_max_article_age_days: int = 14
+    worker_max_article_age_days: int = 14
 
     @property
     def is_sqlite(self) -> bool:

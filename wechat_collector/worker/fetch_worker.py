@@ -29,6 +29,7 @@ from wechat_collector.services.article_service import (
     ClientContext,
     ingest_article,
 )
+from wechat_collector.utils.article_age import is_publish_time_too_old
 
 logger = logging.getLogger("wechat_collector.worker")
 
@@ -81,6 +82,17 @@ def _fetch_one(timeout: int) -> tuple[bool, str]:
             parsed = parse_wechat_article_html(html, url=url)
             if not parsed.content_text and not parsed.title:
                 raise ValueError("parse_empty")
+
+            cfg = get_settings()
+            if is_publish_time_too_old(
+                parsed.publish_time,
+                max_age_days=cfg.worker_max_article_age_days,
+            ):
+                candidate_service.mark_ignored(db, task_id)
+                return True, (
+                    f"[OLD] task={task_id} publish_time={parsed.publish_time} "
+                    f"{parsed.title or url[:60]}"
+                )
 
             result = ingest_article(
                 db,

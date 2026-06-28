@@ -5,7 +5,9 @@ from __future__ import annotations
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 # 文章身份参数；sn/chksm/scene 等分享追踪参数不参与去重
-KEEP_QUERY_PARAMS = frozenset({"__biz", "mid", "idx"})
+KEEP_QUERY_PARAMS = frozenset(
+    {"__biz", "mid", "idx", "src", "ver", "timestamp", "signature"}
+)
 STRIP_QUERY_PARAMS = frozenset(
     {
         "sn",
@@ -34,6 +36,17 @@ def normalize_wechat_url(url: str | None) -> str | None:
         normalized = parsed._replace(fragment="", scheme="https")
         return urlunparse(normalized)
 
+    # /s/SHORTCODE 形式：路径即身份，保留 path
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if len(path_parts) >= 2 and path_parts[0] == "s" and path_parts[1]:
+        normalized = parsed._replace(
+            fragment="",
+            query="",
+            scheme="https",
+            netloc="mp.weixin.qq.com",
+        )
+        return urlunparse(normalized)
+
     query = parse_qs(parsed.query, keep_blank_values=False)
     filtered: dict[str, str] = {}
     for key, values in query.items():
@@ -46,7 +59,7 @@ def normalize_wechat_url(url: str | None) -> str | None:
 
     normalized = parsed._replace(
         fragment="",
-        query=urlencode(filtered),
+        query=urlencode(sorted(filtered.items())),
         scheme="https",
         netloc="mp.weixin.qq.com",
     )

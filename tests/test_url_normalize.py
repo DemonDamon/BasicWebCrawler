@@ -33,6 +33,26 @@ def test_normalize_wechat_url_strips_tracking_params() -> None:
     normalized = normalize_wechat_url(
         "https://mp.weixin.qq.com/s?__biz=abc123&mid=1&idx=1&sn=xyz&utm_source=noise&chksm=abc"
     )
-    assert normalized == "https://mp.weixin.qq.com/s?__biz=abc123&mid=1&idx=1"
+    assert normalized == "https://mp.weixin.qq.com/s?__biz=abc123&idx=1&mid=1"
     assert "sn=" not in normalized
     assert "utm_source" not in normalized
+
+
+def test_normalize_wechat_url_keeps_sogou_redirect_identity() -> None:
+    a = normalize_wechat_url(
+        "https://mp.weixin.qq.com/s?src=11&timestamp=1782530142&ver=6807&signature=AAA&new=1"
+    )
+    b = normalize_wechat_url(
+        "https://mp.weixin.qq.com/s?src=11&timestamp=1782530999&ver=6807&signature=BBB"
+    )
+    assert a != b
+    assert "signature=AAA" in a
+    assert "timestamp=1782530142" in a
+    assert "new=" not in a
+
+
+def test_normalize_wechat_url_short_path_is_distinct() -> None:
+    a = normalize_wechat_url("https://mp.weixin.qq.com/s/ABC123xyz")
+    b = normalize_wechat_url("https://mp.weixin.qq.com/s/DEF456uvw")
+    assert a == "https://mp.weixin.qq.com/s/ABC123xyz"
+    assert a != b

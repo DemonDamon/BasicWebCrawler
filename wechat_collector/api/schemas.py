@@ -95,6 +95,27 @@ class ArticleListItem(BaseModel):
     publish_time: datetime | None
     collected_at: datetime
     source: str | None
+    has_content: bool = False
+    text_length: int = 0
+
+
+class ArticleDetail(BaseModel):
+    id: int
+    title: str
+    account_name: str | None
+    url: str
+    canonical_url: str | None
+    publish_time: datetime | None
+    collected_at: datetime
+    source: str | None
+    org_id: int | None
+    cover_url: str | None
+    summary: str | None
+    content_html: str | None
+    content_text: str | None
+    text_length: int = 0
+    html_length: int = 0
+    image_count: int = 0
 
 
 class TaskResponse(BaseModel):

@@ -125,6 +125,7 @@ def test_admin_list_articles(api_client) -> None:
             "title": "后台列表文章",
             "url": "https://mp.weixin.qq.com/s?__biz=admin&mid=1&idx=1",
             "content_text": "后台可见",
+            "content_html": "<p>后台可见</p><img data-src=\"https://example.com/a.jpg\" />",
         },
         headers=AUTH_HEADERS,
     )
@@ -133,6 +134,13 @@ def test_admin_list_articles(api_client) -> None:
     items = response.json()
     assert len(items) >= 1
     assert items[0]["title"]
+    assert items[0]["has_content"] is True
+
+    detail = api_client.get(f"/admin/articles/{items[0]['id']}", headers=AUTH_HEADERS)
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["content_text"] == "后台可见"
+    assert body["image_count"] == 1
 
 
 def test_healthz_without_auth(api_client) -> None:
