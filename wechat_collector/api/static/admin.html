@@ -217,6 +217,34 @@
       box-shadow: 0 10px 24px var(--accent-glow);
     }
 
+    .btn-secondary {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      border-color: rgba(5, 150, 105, 0.35);
+      color: #047857;
+      background: var(--accent-soft);
+    }
+
+    .btn-secondary:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary.refreshing {
+      pointer-events: none;
+    }
+
+    .btn-secondary.refreshing::before {
+      content: '↻ ';
+      display: inline-block;
+      animation: spin 0.7s linear infinite;
+    }
+
     .stats-row {
       display: flex;
       gap: 10px;
@@ -841,6 +869,7 @@
             <input id="token" type="password" placeholder="粘贴 API Token" autocomplete="off" />
           </div>
           <button class="btn btn-primary" id="load">加载文章</button>
+          <button class="btn btn-secondary" id="refresh" type="button" title="重新拉取最新文章列表" disabled>刷新</button>
         </div>
       </div>
       <div class="stats-row">
@@ -876,6 +905,7 @@
   <script>
     const tokenInput = document.getElementById('token');
     const filterInput = document.getElementById('filter');
+    const refreshBtn = document.getElementById('refresh');
     const statCount = document.getElementById('stat-count');
     const statContent = document.getElementById('stat-content');
     const statStatus = document.getElementById('stat-status');
@@ -1150,7 +1180,7 @@
       bindCopyButtons(detailEl);
     }
 
-    async function loadDetail(id) {
+    async function loadDetail(id, { preserveTab = false } = {}) {
       selectedId = id;
       renderList();
       renderDetailSkeleton();
@@ -1158,7 +1188,7 @@
         const resp = await fetch('/admin/articles/' + id, { headers: authHeaders() });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const article = await resp.json();
-        activeTab = 'preview';
+        if (!preserveTab) activeTab = 'preview';
         renderDetail(article);
       } catch (err) {
         detailEl.innerHTML = `<div class="empty-state error"><div class="empty-icon">⚠️</div><div>详情加载失败：${escapeHtml(err.message)}</div></div>`;
@@ -1175,51 +1205,98 @@
       renderList();
     }
 
-    async function loadArticles() {
+    async function loadArticles({ refresh = false } = {}) {
       const token = tokenInput.value.trim();
       if (!token) {
         setStats({ total: 0, withContent: 0, status: '请先填写 Token', isError: true });
         return;
       }
+
+      const prevSelectedId = selectedId;
+      const prevFilter = filterInput.value;
+
       sessionStorage.setItem('wc_admin_token', token);
-      setStats({ total: 0, withContent: 0, status: '加载中…', isError: false });
-      rowsEl.innerHTML = '';
-      detailEl.innerHTML = '<div class="empty-state"><div class="loader"></div><div>正在拉取文章列表…</div></div>';
+      setStats({
+        total: articles.length || 0,
+        withContent: articles.filter((a) => a.has_content).length,
+        status: refresh ? '刷新中…' : '加载中…',
+        isError: false,
+      });
+
+      if (refresh) {
+        refreshBtn.classList.add('refreshing');
+        refreshBtn.disabled = true;
+      } else {
+        rowsEl.innerHTML = '';
+        detailEl.innerHTML = '<div class="empty-state"><div class="loader"></div><div>正在拉取文章列表…</div></div>';
+      }
 
       try {
         const resp = await fetch('/admin/articles?limit=100', { headers: authHeaders() });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         articles = await resp.json();
-        filteredArticles = [...articles];
         filterInput.disabled = false;
-        filterInput.value = '';
+
+        if (refresh) {
+          filterInput.value = prevFilter;
+          applyFilter();
+        } else {
+          filteredArticles = [...articles];
+          filterInput.value = '';
+        }
 
         const withContent = articles.filter((a) => a.has_content).length;
+        const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
         setStats({
           total: articles.length,
           withContent,
-          status: '点击左侧切换文章',
+          status: refresh ? `已刷新 ${now}` : '点击左侧切换文章',
           isError: false,
         });
 
         renderList();
-        if (articles.length > 0) {
-          await loadDetail(articles[0].id);
-        } else {
+        refreshBtn.disabled = false;
+
+        if (articles.length === 0) {
+          selectedId = null;
           detailEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div>暂无文章</div></div>';
+          return;
+        }
+
+        const targetId = refresh && prevSelectedId && articles.some((a) => a.id === prevSelectedId)
+          ? prevSelectedId
+          : (filteredArticles[0]?.id ?? articles[0].id);
+
+        if (targetId != null) {
+          await loadDetail(targetId, { preserveTab: refresh });
         }
       } catch (err) {
-        setStats({ total: 0, withContent: 0, status: '加载失败: ' + err.message, isError: true });
-        detailEl.innerHTML = '';
-        rowsEl.innerHTML = '';
+        setStats({
+          total: articles.length || 0,
+          withContent: articles.filter((a) => a.has_content).length,
+          status: (refresh ? '刷新失败: ' : '加载失败: ') + err.message,
+          isError: true,
+        });
+        if (!refresh) {
+          detailEl.innerHTML = '';
+          rowsEl.innerHTML = '';
+        }
+        refreshBtn.disabled = articles.length === 0;
+      } finally {
+        refreshBtn.classList.remove('refreshing');
       }
     }
 
-    document.getElementById('load').addEventListener('click', loadArticles);
+    document.getElementById('load').addEventListener('click', () => loadArticles());
+    refreshBtn.addEventListener('click', () => loadArticles({ refresh: true }));
     filterInput.addEventListener('input', applyFilter);
     tokenInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') loadArticles();
     });
+
+    if (savedToken) {
+      loadArticles();
+    }
   </script>
 </body>
 </html>
