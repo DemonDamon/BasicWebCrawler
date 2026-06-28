@@ -18,7 +18,6 @@ from wechat_collector.discovery.base import (
 from wechat_collector.discovery.providers.baidu import BaiduDiscoveryProvider
 from wechat_collector.discovery.providers.bing import BingDiscoveryProvider
 from wechat_collector.discovery.providers.official_site import OfficialSiteDiscoveryProvider
-from wechat_collector.discovery.providers.rsshub import RSSHubDiscoveryProvider
 from wechat_collector.discovery.providers.sogou_wechat import SogouWechatDiscoveryProvider
 from wechat_collector.discovery.search_html import FetchHtmlFn
 from wechat_collector.services import candidate_service
@@ -38,7 +37,6 @@ class DiscoveryRunSummary:
 
 def default_providers(fetch_html: FetchHtmlFn | None = None) -> list[DiscoveryProvider]:
     return [
-        RSSHubDiscoveryProvider(),
         BingDiscoveryProvider(fetch_html=fetch_html),
         BaiduDiscoveryProvider(fetch_html=fetch_html),
         SogouWechatDiscoveryProvider(fetch_html=fetch_html),

@@ -541,7 +541,7 @@ SITE_CONFIGS = {
 
 ## 微信公众号定向采集系统（wechat_collector）
 
-基于 BasicWebCrawler 延伸的采集子系统，对 3000+ 组织做「多源发现 + 浏览器插件采集 + 队列去重 + 覆盖率监控 + RSSHub 自动巡检」。
+基于 BasicWebCrawler 延伸的采集子系统，对 3000+ 组织做「多源发现 + 浏览器插件采集 + 队列去重 + 覆盖率监控」。
 
 > **完整使用手册**：`wechat_collector/README.md`
 
@@ -574,18 +574,16 @@ wechat_collector/
 ├── api/               # FastAPI 路由（articles / candidates / accounts / admin 等）
 ├── db/                # SQLAlchemy ORM + SessionLocal
 ├── discovery/         # 多源发现层
-│   └── providers/     # bing / baidu / sogou / rsshub / sogou_playwright
+│   └── providers/     # bing / baidu / sogou / sogou_playwright
 ├── io/                # 命令行工具脚本
 │   ├── import_wechat_accounts.py   # 批量导入公众号 CSV
 │   ├── enqueue_wechat_urls.py      # URL 批量入候选池
-│   ├── show_biz_status.py          # 查看 __biz 填充进度
-│   └── register_rsshub_routes.py   # 配置 RSSHub 巡检路由
+│   └── show_biz_status.py          # 查看 __biz 填充进度
 ├── migrations/        # Alembic 迁移脚本（001~004）
 ├── parsers/           # 微信文章 HTML 解析
 ├── services/          # 业务逻辑（article / candidate / org）
 ├── worker/
 │   ├── fetch_worker.py   # 候选池消费 Worker（fetch + parse + 入库）
-│   ├── rss_poller.py     # RSS 巡检 Worker（定期发现新文章 URL）
 │   └── sogou_poller.py   # Playwright 搜狗发现 Worker
 └── README.md          # 完整使用手册
 extension/             # Chrome MV3 插件（手动 M1 + 自动队列 M2）
@@ -598,8 +596,7 @@ samples/               # 示例 CSV 和 HTML 快照
 |------|------|
 | `POST /api/articles` | 插件推送文章入库 |
 | `GET /api/crawl/tasks/next` | 插件拉取下一个抓取任务 |
-| `GET /api/accounts` | 查看所有公众号及 RSSHub 路由 |
-| `PUT /api/accounts/{id}/rsshub_routes` | 配置账号的 RSSHub 路由 |
+| `GET /api/accounts` | 查看所有公众号 |
 | `POST /api/discovery/run` | 手动触发多源发现 |
 | `GET /api/coverage/report` | 覆盖率报表 |
 | `POST /api/monitoring/refresh` | 刷新账号健康度 |
@@ -611,27 +608,8 @@ samples/               # 示例 CSV 和 HTML 快照
 # Worker 1：处理候选池（fetch + parse + 入库），随机间隔防反爬
 python -m wechat_collector.worker
 
-# Worker 2：RSS 巡检（定期拉取各账号新文章 URL，默认每 30min）
-python -m wechat_collector.worker.rss_poller
-
-# Worker 3：Playwright 搜狗发现（推荐，需 SOGOU_PLAYWRIGHT_ENABLED=true）
+# Worker 2：Playwright 搜狗发现（推荐，需 SOGOU_PLAYWRIGHT_ENABLED=true）
 SOGOU_PLAYWRIGHT_ENABLED=true python -m wechat_collector.worker.sogou_poller
-```
-
-### RSSHub 自动巡检（全自动发现）
-
-```bash
-# 1. 启动本地 RSSHub
-docker run -d -p 1200:1200 --name rsshub diygod/rsshub
-
-# 2. 用插件采集各号任意一篇文章 → __biz 自动入库
-python -m wechat_collector.io.show_biz_status   # 查看进度
-
-# 3. 一键配置所有已知 biz 的账号
-python -m wechat_collector.io.register_rsshub_routes auto-freewechat
-
-# 4. 启动巡检（配合 fetch_worker 一起跑）
-python -m wechat_collector.worker.rss_poller
 ```
 
 ### 数据表
@@ -639,7 +617,7 @@ python -m wechat_collector.worker.rss_poller
 | 表 | 说明 |
 |----|------|
 | `organizations` | 组织主数据 |
-| `wechat_accounts` | 公众号账号（含 `biz`、`rsshub_routes`） |
+| `wechat_accounts` | 公众号账号（含 `biz`） |
 | `article_candidates` | 文章候选池（队列，含状态机） |
 | `articles` | 已采集正文 |
 | `account_health` | 公众号健康度统计 |
@@ -649,7 +627,7 @@ python -m wechat_collector.worker.rss_poller
 
 - 任务失败退避：10min → 1h → 6h，第 4 次升级 `manual` 人工处理
 - 账号限频：同一账号 `SCHEDULER_MAX_ACCOUNT_INTERVAL_SECONDS`（默认 60s）内不重复取任务
-- 发现源健康：连续空结果达阈值自动标 warning，RSS 巡检不可达时静默跳过不崩溃
+- 发现源健康：连续空结果达阈值自动标 warning
 
 ## 贡献指南
 

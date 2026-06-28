@@ -14,7 +14,7 @@ ENV_PATH = PROJECT_ROOT / ".env"
 ENV_EXAMPLE_PATH = PROJECT_ROOT / ".env.example"
 
 SettingType = Literal["string", "int", "float", "bool"]
-SettingGroup = Literal["database", "auth", "worker", "rsshub", "sogou"]
+SettingGroup = Literal["database", "auth", "worker", "sogou"]
 
 
 @dataclass(frozen=True)
@@ -93,55 +93,10 @@ SETTING_FIELDS: tuple[SettingFieldMeta, ...] = (
         default=14,
     ),
     SettingFieldMeta(
-        "RSSHUB_BASE_URL",
-        "rsshub_base_url",
-        "RSSHub 地址",
-        "rsshub",
-        "string",
-        "本地 RSSHub 实例 base URL",
-        default="http://127.0.0.1:1200",
-    ),
-    SettingFieldMeta(
-        "RSS_POLL_INTERVAL_SECONDS",
-        "rss_poll_interval_seconds",
-        "RSS 巡检间隔（秒）",
-        "rsshub",
-        "int",
-        "rss_poller 轮询间隔",
-        default=1800,
-    ),
-    SettingFieldMeta(
-        "RSS_REQUEST_DELAY_MIN_SECONDS",
-        "rss_request_delay_min_seconds",
-        "RSS 请求最短延迟（秒）",
-        "rsshub",
-        "float",
-        "每条 RSS 路由请求后的最短等待",
-        default=2.0,
-    ),
-    SettingFieldMeta(
-        "RSS_REQUEST_DELAY_MAX_SECONDS",
-        "rss_request_delay_max_seconds",
-        "RSS 请求最长延迟（秒）",
-        "rsshub",
-        "float",
-        "每条 RSS 路由请求后的最长等待",
-        default=5.0,
-    ),
-    SettingFieldMeta(
-        "RSS_REQUEST_TIMEOUT_SECONDS",
-        "rss_request_timeout_seconds",
-        "RSS 请求超时（秒）",
-        "rsshub",
-        "int",
-        "RSS HTTP 请求超时",
-        default=15,
-    ),
-    SettingFieldMeta(
         "SCHEDULER_MAX_ACCOUNT_INTERVAL_SECONDS",
         "scheduler_max_account_interval_seconds",
         "同号最短抓取间隔（秒）",
-        "rsshub",
+        "worker",
         "int",
         "同一公众号两次抓取的最短间隔",
         default=60,
@@ -150,7 +105,7 @@ SETTING_FIELDS: tuple[SettingFieldMeta, ...] = (
         "DISCOVERY_REQUEST_DELAY_SECONDS",
         "discovery_request_delay_seconds",
         "发现任务延迟（秒）",
-        "rsshub",
+        "worker",
         "float",
         "通用发现任务请求间隔",
         default=1.5,
@@ -269,7 +224,6 @@ GROUP_LABELS: dict[SettingGroup, str] = {
     "database": "数据库",
     "auth": "API 鉴权",
     "worker": "Worker 抓取",
-    "rsshub": "RSSHub 巡检",
     "sogou": "搜狗 Playwright 发现",
 }
 
