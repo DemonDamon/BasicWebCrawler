@@ -85,12 +85,39 @@ def _select_content_node(soup: BeautifulSoup, selectors: list[str]) -> Tag | Non
     return None
 
 
+_STYLE_VISIBILITY_HIDDEN_RE = re.compile(r"\bvisibility\s*:\s*hidden\s*;?", re.IGNORECASE)
+_STYLE_OPACITY_ZERO_RE = re.compile(r"\bopacity\s*:\s*0\s*;?", re.IGNORECASE)
+_STYLE_DISPLAY_NONE_RE = re.compile(r"\bdisplay\s*:\s*none\s*;?", re.IGNORECASE)
+
+
+def _sanitize_inline_style(style: str) -> str | None:
+    """微信正文常带 visibility:hidden / opacity:0，需去掉否则预览空白。"""
+    cleaned = _STYLE_VISIBILITY_HIDDEN_RE.sub("", style)
+    cleaned = _STYLE_OPACITY_ZERO_RE.sub("", cleaned)
+    cleaned = _STYLE_DISPLAY_NONE_RE.sub("", cleaned)
+    cleaned = re.sub(r";\s*;+", ";", cleaned).strip().strip(";").strip()
+    return cleaned or None
+
+
+def _strip_wechat_hidden_styles(root: Tag) -> None:
+    for el in (root, *root.find_all(True)):
+        style = el.get("style")
+        if not style:
+            continue
+        sanitized = _sanitize_inline_style(style)
+        if sanitized:
+            el["style"] = sanitized
+        else:
+            del el["style"]
+
+
 def _clean_content_node(node: Tag) -> Tag:
     clone = BeautifulSoup(str(node), "html.parser")
     root = clone.find(node.name) or clone
     for tag_name in ("script", "style", "iframe"):
         for unwanted in root.find_all(tag_name):
             unwanted.decompose()
+    _strip_wechat_hidden_styles(root)
     return root
 
 

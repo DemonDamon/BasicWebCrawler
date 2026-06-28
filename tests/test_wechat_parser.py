@@ -69,6 +69,24 @@ def test_parse_failure_saves_snapshot(tmp_path: Path) -> None:
     assert list(tmp_path.glob("wechat_parse_fail_*.html"))
 
 
+def test_parse_strips_wechat_hidden_content_styles() -> None:
+    html = """
+    <html><body>
+      <h1 id="activity-name">测试标题</h1>
+      <div id="js_name">测试公众号</div>
+      <div id="js_content" style="visibility: hidden; opacity: 0;">
+        <p>可见正文段落</p>
+      </div>
+    </body></html>
+    """
+    result = parse_wechat_article_html(html, save_snapshot_on_error=False)
+
+    assert result.content_html is not None
+    assert "visibility: hidden" not in result.content_html
+    assert "opacity: 0" not in result.content_html
+    assert "可见正文段落" in (result.content_text or "")
+
+
 def test_normalize_wechat_url() -> None:
     assert (
         normalize_wechat_url("https://mp.weixin.qq.com/s?__biz=abc&sn=1&mid=1&idx=1&utm_source=x#comment")

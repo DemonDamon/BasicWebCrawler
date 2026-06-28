@@ -546,6 +546,12 @@
       font-family: var(--font-serif);
     }
 
+    .content-box.article-preview #js_content,
+    .content-box.article-preview .rich_media_content {
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+
     .content-box.article-preview img {
       max-width: 100%;
       height: auto;
@@ -556,6 +562,173 @@
     }
 
     .content-box.article-preview p { margin: 0.85em 0; }
+
+    .preview-hint {
+      margin: 10px 0 0;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .meta-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .meta-stat-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .meta-stat-card {
+      padding: 16px 18px;
+      border-radius: var(--radius);
+      background: linear-gradient(145deg, #ffffff, #f8faf9);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .meta-stat-card .label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .meta-stat-card .value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .meta-stat-card .unit {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-left: 2px;
+    }
+
+    .meta-section {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-solid);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .meta-section-title {
+      margin: 0;
+      padding: 12px 18px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: rgba(15, 23, 42, 0.03);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .meta-dl {
+      margin: 0;
+      display: grid;
+      grid-template-columns: 120px 1fr;
+    }
+
+    .meta-dl dt {
+      margin: 0;
+      padding: 12px 18px;
+      font-size: 13px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    .meta-dl dd {
+      margin: 0;
+      padding: 12px 18px;
+      font-size: 13px;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      word-break: break-all;
+    }
+
+    .meta-dl dt:last-of-type,
+    .meta-dl dd:last-of-type {
+      border-bottom: none;
+    }
+
+    .meta-dl dd.mono {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .meta-url {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .meta-url a {
+      flex: 1;
+      color: #047857;
+      text-decoration: none;
+      line-height: 1.5;
+    }
+
+    .meta-url a:hover {
+      text-decoration: underline;
+    }
+
+    .copy-btn {
+      flex-shrink: 0;
+      appearance: none;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--text-muted);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+    }
+
+    .copy-btn:hover {
+      color: var(--accent);
+      border-color: rgba(5, 150, 105, 0.35);
+      background: var(--accent-soft);
+    }
+
+    .copy-btn.copied {
+      color: #047857;
+      border-color: rgba(5, 150, 105, 0.45);
+      background: var(--accent-soft);
+    }
+
+    .meta-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #047857;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    @media (max-width: 640px) {
+      .meta-stat-row { grid-template-columns: 1fr; }
+      .meta-dl { grid-template-columns: 1fr; }
+      .meta-dl dt { border-bottom: none; padding-bottom: 4px; }
+    }
 
     .link-btn {
       display: inline-flex;
@@ -741,8 +914,24 @@
       statStatus.className = 'stat-pill' + (isError ? ' error' : '');
     }
 
+    function sanitizeWechatInlineStyle(style) {
+      return style
+        .replace(/visibility\s*:\s*hidden\s*;?/gi, '')
+        .replace(/opacity\s*:\s*0\s*;?/gi, '')
+        .replace(/display\s*:\s*none\s*;?/gi, '')
+        .replace(/;\s*;+/g, ';')
+        .trim()
+        .replace(/^;|;$/g, '')
+        .trim();
+    }
+
     function prepareArticleHtml(html) {
       const doc = new DOMParser().parseFromString(html, 'text/html');
+      doc.querySelectorAll('[style]').forEach((el) => {
+        const cleaned = sanitizeWechatInlineStyle(el.getAttribute('style') || '');
+        if (cleaned) el.setAttribute('style', cleaned);
+        else el.removeAttribute('style');
+      });
       doc.querySelectorAll('img').forEach((img) => {
         const src = img.getAttribute('data-src') || img.getAttribute('src');
         if (src) {
@@ -762,6 +951,109 @@
         .replaceAll('<', '&lt;')
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;');
+    }
+
+    function formatDateTime(value) {
+      if (!value) return '—';
+      try {
+        return new Date(value).toLocaleString('zh-CN', {
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+        });
+      } catch (_) {
+        return value;
+      }
+    }
+
+    function formatBytes(num) {
+      if (num < 1024) return num + ' B';
+      if (num < 1024 * 1024) return (num / 1024).toFixed(1) + ' KB';
+      return (num / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function renderMetaRow(label, valueHtml) {
+      return `<dt>${escapeHtml(label)}</dt><dd>${valueHtml}</dd>`;
+    }
+
+    function renderMetaUrl(label, url) {
+      if (!url) return renderMetaRow(label, '—');
+      return renderMetaRow(
+        label,
+        `<div class="meta-url">
+          <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>
+          <button type="button" class="copy-btn" data-copy="${escapeHtml(url)}">复制</button>
+        </div>`
+      );
+    }
+
+    function renderMetadataPanel(article) {
+      const contentStatus = article.text_length > 0
+        ? `<span class="meta-badge">有正文</span>`
+        : `<span class="meta-badge" style="background:var(--danger-soft);color:var(--danger)">无正文</span>`;
+
+      return `
+        <div class="meta-panel">
+          <div class="meta-stat-row">
+            <div class="meta-stat-card">
+              <span class="label">正文字数</span>
+              <span class="value">${article.text_length.toLocaleString()}<span class="unit">字</span></span>
+            </div>
+            <div class="meta-stat-card">
+              <span class="label">HTML 体积</span>
+              <span class="value">${formatBytes(article.html_length)}</span>
+            </div>
+            <div class="meta-stat-card">
+              <span class="label">内嵌图片</span>
+              <span class="value">${article.image_count}<span class="unit">张</span></span>
+            </div>
+          </div>
+
+          <section class="meta-section">
+            <h3 class="meta-section-title">标识与关联</h3>
+            <dl class="meta-dl">
+              ${renderMetaRow('文章 ID', `<span class="mono">${article.id}</span>`)}
+              ${renderMetaRow('机构 ID', article.org_id != null ? `<span class="mono">${article.org_id}</span>` : '—')}
+              ${renderMetaRow('采集来源', escapeHtml(article.source || '—'))}
+              ${renderMetaRow('正文状态', contentStatus)}
+            </dl>
+          </section>
+
+          <section class="meta-section">
+            <h3 class="meta-section-title">时间</h3>
+            <dl class="meta-dl">
+              ${renderMetaRow('发布时间', formatDateTime(article.publish_time))}
+              ${renderMetaRow('采集时间', formatDateTime(article.collected_at))}
+            </dl>
+          </section>
+
+          <section class="meta-section">
+            <h3 class="meta-section-title">链接</h3>
+            <dl class="meta-dl">
+              ${renderMetaUrl('原文 URL', article.url)}
+              ${renderMetaUrl('规范化 URL', article.canonical_url)}
+              ${renderMetaUrl('封面图', article.cover_url)}
+            </dl>
+          </section>
+        </div>`;
+    }
+
+    function bindCopyButtons(root) {
+      root.querySelectorAll('.copy-btn[data-copy]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const text = btn.dataset.copy || '';
+          try {
+            await navigator.clipboard.writeText(text);
+            btn.textContent = '已复制';
+            btn.classList.add('copied');
+            setTimeout(() => {
+              btn.textContent = '复制';
+              btn.classList.remove('copied');
+            }, 1600);
+          } catch (_) {
+            btn.textContent = '失败';
+          }
+        });
+      });
     }
 
     function renderList() {
@@ -807,21 +1099,22 @@
 
       let body = '';
       if (activeTab === 'preview') {
-        body = article.content_html
-          ? `<div class="content-box article-preview">${prepareArticleHtml(article.content_html)}</div>`
-          : '<div class="content-box text">（无 HTML 正文，可能触发微信验证或未解析成功）</div>';
+        if (article.content_html) {
+          body = `<div class="content-box article-preview">${prepareArticleHtml(article.content_html)}</div>`;
+        } else if (article.content_text) {
+          body = `<div class="content-box text">${escapeHtml(article.content_text)}</div><p class="preview-hint">（无 HTML，已回退显示纯文本）</p>`;
+        } else {
+          body = '<div class="content-box text">（无正文，可能触发微信验证或抓取失败）</div>';
+        }
       } else if (activeTab === 'text') {
         body = `<div class="content-box text">${escapeHtml(article.content_text || '（无纯文本正文）')}</div>`;
       } else {
-        body = `<div class="content-box text">${escapeHtml(JSON.stringify({
-          id: article.id,
-          org_id: article.org_id,
-          canonical_url: article.canonical_url,
-          text_length: article.text_length,
-          html_length: article.html_length,
-          image_count: article.image_count,
-        }, null, 2))}</div>`;
+        body = renderMetadataPanel(article);
       }
+
+      const noteHtml = activeTab === 'preview'
+        ? '<p class="note">图片保存在 HTML 内的微信 CDN 链接，未下载到本地；预览失败时可点击上方原文链接。</p>'
+        : '';
 
       detailEl.innerHTML = `
         <div class="detail-inner">
@@ -844,7 +1137,7 @@
               <button class="tab ${activeTab === 'meta' ? 'active' : ''}" data-tab="meta">元数据</button>
             </div>
             ${body}
-            <p class="note">图片保存在 HTML 内的微信 CDN 链接，未下载到本地；预览失败时可点击上方原文链接。</p>
+            ${noteHtml}
           </div>
         </div>`;
 
@@ -854,6 +1147,7 @@
           renderDetail(article);
         });
       });
+      bindCopyButtons(detailEl);
     }
 
     async function loadDetail(id) {
