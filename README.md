@@ -541,31 +541,49 @@ SITE_CONFIGS = {
 
 ## 微信公众号定向采集系统（wechat_collector）
 
-基于 BasicWebCrawler 延伸的采集子系统，对 3000+ 组织做「多源发现 + 浏览器插件采集 + 队列去重 + 覆盖率监控」。
+基于 BasicWebCrawler 延伸的采集子系统，对 3000+ 组织做「搜狗 Playwright 自动发现 + Worker 抓取入库 + 浏览器插件补采 + 覆盖率监控」。
 
-> **完整使用手册**：`wechat_collector/README.md`
+> **完整使用手册（小白请从这里读）**：[`wechat_collector/README.md`](wechat_collector/README.md) 第 2 节
 
-### 快速启动
+### 快速启动（全自动，推荐）
 
 ```bash
-# 1. 安装依赖
+cd BasicWebCrawler
+
+# 1. 依赖 + Playwright 浏览器
 pip install -r requirements-collector.txt
+playwright install chromium
 
-# 2. 配置环境变量
+# 2. 配置（至少改 Token，并开启 SOGOU_PLAYWRIGHT_ENABLED=true）
 cp .env.example .env
-# 编辑 .env，设置 COLLECTOR_API_TOKEN
 
-# 3. 初始化数据库
+# 3. 数据库 + 公众号
 alembic upgrade head
-
-# 4. 导入公众号清单
 python -m wechat_collector.io.import_wechat_accounts samples/pilot_wechat_accounts.csv
 
-# 5. 启动 API 服务
+# 4. 三个终端分别运行：
+#    终端 1 — API
 uvicorn wechat_collector.api.app:app --reload --port 8787
+#    终端 2 — 搜狗发现（首次建议 SOGOU_HEADLESS=false ... sogou_poller --once 养 cookie）
+python -m wechat_collector.worker.sogou_poller
+#    终端 3 — 抓取入库
+python -m wechat_collector.worker
 ```
 
-访问 `http://127.0.0.1:8787/admin` 查看后台，`/docs` 查看接口文档。
+- 阅读台：`http://127.0.0.1:8787/admin`（粘贴 `.env` 里的 Token）
+- 管理配置：`http://127.0.0.1:8787/admin/manage`
+- 接口文档：`http://127.0.0.1:8787/docs`
+
+### 快速启动（仅插件，可选）
+
+```bash
+pip install -r requirements-collector.txt
+cp .env.example .env   # 设置 COLLECTOR_API_TOKEN
+alembic upgrade head
+python -m wechat_collector.io.import_wechat_accounts samples/pilot_wechat_accounts.csv
+uvicorn wechat_collector.api.app:app --reload --port 8787
+# Chrome 加载 extension/ 目录，打开微信文章后点「采集当前文章」
+```
 
 ### 目录结构
 

@@ -7,7 +7,7 @@
 ## 目录
 
 1. [系统架构一览](#1-系统架构一览)
-2. [快速开始（5 分钟）](#2-快速开始5-分钟)
+2. [环境准备与快速上手（推荐）](#2-环境准备与快速上手推荐)
 3. [环境配置](#3-环境配置)
 4. [初始化数据库](#4-初始化数据库)
 5. [导入公众号清单](#5-导入公众号清单)
@@ -71,38 +71,142 @@
 
 > 路径互补：搜狗发现负责找 URL，Worker / 插件负责打开并入库；需要登录态的内容仍靠插件。
 
+### 推荐阅读顺序（小白向）
+
+| 你的目标 | 从哪读起 |
+|---------|---------|
+| **第一次搭环境、跑通全自动采集** | 第 **2** 节（按步骤做）→ 第 **9** 节看结果 |
+| 改 `.env`、Token、搜狗间隔 | 第 **3** 节 + `/admin/manage` 网页配置 |
+| 只用 Chrome 插件手动采一篇 | 第 **7** 节 → 第 **8** 节方式 A |
+| 搜狗发现排错、读懂日志 | 第 **12** 节 |
+| 忘记命令 | 第 **13** 节速查表 |
+
 ---
 
 
 
-## 2. 快速开始（5 分钟）
+## 2. 环境准备与快速上手（推荐）
 
-> ⚠️ **以下所有命令均在项目根目录下执行**（即 `BasicWebCrawler/` 目录，`wechat_collector/` 的上一级）：
+> 📁 **以下所有命令均在项目根目录执行**（`BasicWebCrawler/`，不是 `wechat_collector/` 子目录）：
 >
 > ```bash
 > cd /path/to/BasicWebCrawler
 > ```
 
+本节教你跑通**推荐路径**：**搜狗 Playwright 自动发现 URL → Worker 抓取入库 → Admin 阅读**。  
+不需要 Docker，不需要 RSSHub；Chrome 插件可选（补采单篇时用）。
+
+### 你需要准备什么
+
+| 项目 | 要求 |
+|------|------|
+| 操作系统 | macOS / Linux / Windows 均可 |
+| Python | **3.10+**（建议 3.11 或 3.12；用 `python3 --version` 检查） |
+| 磁盘 | Playwright Chromium 约 150MB；SQLite 数据库在项目根目录 |
+| 网络 | 能访问搜狗微信搜索、`mp.weixin.qq.com` |
+| 终端窗口 | 全自动模式需 **3 个终端** 同时开着（见下文） |
+
+### 第一步：安装 Python 依赖
+
 ```bash
-# 1. 安装依赖
 pip install -r requirements-collector.txt
-
-# 2. 复制配置模板并编辑
-cp .env.example .env
-# 编辑 .env，把 COLLECTOR_API_TOKEN 改成自己生成的随机字符串（见第 3 节）
-
-# 3. 初始化数据库（首次运行）
-alembic upgrade head
-
-# 4. 导入试点公众号
-python -m wechat_collector.io.import_wechat_accounts samples/pilot_wechat_accounts.csv
-
-# 5. 启动 API 服务（保持终端窗口开着）
-uvicorn wechat_collector.api.app:app --reload --port 8787
-
-# 6. 安装 Chrome 插件（见第 7 节），在浏览器里打开微信文章，点击「采集当前文章」
-# 7. 访问 http://127.0.0.1:8787/admin 查看结果
 ```
+
+若使用虚拟环境（推荐）：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements-collector.txt
+```
+
+### 第二步：安装 Playwright 浏览器（搜狗发现必做）
+
+```bash
+playwright install chromium
+```
+
+只需执行一次。未安装时运行 `sogou_poller` 会报错。
+
+### 第三步：配置 `.env`
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env`，**至少**改这两项：
+
+```bash
+# 自己生成随机 Token（见下方命令），插件与 Admin 要用同一个
+COLLECTOR_API_TOKEN=粘贴你的随机字符串
+
+# 开启搜狗自动发现（默认示例里是注释掉的，必须打开）
+SOGOU_PLAYWRIGHT_ENABLED=true
+```
+
+生成 Token：
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+更多可调参数见 [第 3 节](#3-环境配置)，或在服务启动后打开 **`http://127.0.0.1:8787/admin/manage`** 图形化修改。
+
+### 第四步：初始化数据库并导入公众号
+
+```bash
+alembic upgrade head
+python -m wechat_collector.io.import_wechat_accounts samples/pilot_wechat_accounts.csv
+```
+
+成功时会看到类似 `Organizations upserted: 49, accounts created: ...`。
+
+### 第五步：开三个终端，分别启动
+
+| 终端 | 命令 | 作用 |
+|------|------|------|
+| **1 — API** | `uvicorn wechat_collector.api.app:app --reload --port 8787` | 提供 `/admin`、候选池、入库接口 |
+| **2 — 发现** | `python -m wechat_collector.worker.sogou_poller` | 搜狗搜文章 → URL 写入候选池 |
+| **3 — 抓取** | `python -m wechat_collector.worker` | 从候选池取 URL → 解析 → 入库 |
+
+> 终端 2、3 的 `.env` 里需有 `SOGOU_PLAYWRIGHT_ENABLED=true`；终端 2 首次运行前建议先做下一步「养 cookie」。
+
+**怎么算成功？**
+
+```bash
+# 候选池里有 pending（发现在工作）
+sqlite3 wechat_collector.db "SELECT status, COUNT(*) FROM article_candidates GROUP BY status;"
+
+# 文章数在增加（抓取在工作）
+sqlite3 wechat_collector.db "SELECT COUNT(*) FROM articles;"
+```
+
+### 第六步：首次运行搜狗 — 养 cookie（重要）
+
+搜狗可能弹验证码。**第一次**用有界面模式跑一轮：
+
+```bash
+SOGOU_HEADLESS=false python -m wechat_collector.worker.sogou_poller --once
+```
+
+在弹出的 Chromium 里完成验证码，等命令行显示本轮结束。之后 `.env` 保持 `SOGOU_HEADLESS=true`（或不设，默认 true），再常驻跑终端 2 即可。
+
+### 第七步：在 Admin 查看文章
+
+1. 浏览器打开 `http://127.0.0.1:8787/admin`
+2. 粘贴与 `.env` 相同的 **API Token** → 点「加载文章」
+3. 左侧选文章，右侧阅读正文
+
+管理公众号清单、环境变量：`http://127.0.0.1:8787/admin/manage`
+
+### 可选：不用搜狗，只用 Chrome 插件采单篇
+
+适合临时补一篇、或验证系统是否正常：
+
+1. 完成上面 **第一～四步** 和 **终端 1（API）**
+2. 按 [第 7 节](#7-chrome-插件安装与配置) 安装 `extension/` 插件
+3. 打开微信文章 → 插件点「采集当前文章」
+4. 在 `/admin` 刷新查看
 
 ---
 
@@ -110,27 +214,38 @@ uvicorn wechat_collector.api.app:app --reload --port 8787
 
 ## 3. 环境配置
 
-> 📁 在项目根目录（`BasicWebCrawler/`）编辑 `.env` 文件：
+> 📁 在项目根目录（`BasicWebCrawler/`）编辑 `.env` 文件。  
+> 也可启动 API 后访问 **`/admin/manage`** 在网页上修改（保存后需重启 Worker / sogou_poller 才生效）。
+
+### 必填项
+
+| 变量 | 说明 |
+|------|------|
+| `COLLECTOR_API_TOKEN` | 鉴权 Token；Admin、Chrome 插件、API 必须一致 |
+| `SOGOU_PLAYWRIGHT_ENABLED` | 设为 `true` 才能跑搜狗发现（`sogou_poller`） |
+
+### 常用可选项
 
 ```bash
-# 数据库（默认用 SQLite，开发够用）
-COLLECTOR_DB_URL=qlite:///./wechat_collector.db
+# 数据库（默认 SQLite，文件在项目根目录）
+COLLECTOR_DB_URL=sqlite:///./wechat_collector.db
 
-# 远程 PostgreSQL 示例（生产环境推荐）
-# COLLECTOR_DB_URL=postgresql+psycopg2://user:password@localhost:5432/wechat_collector
-
-# API 鉴权 Token，自己随机生成一个，插件和服务端保持一致
-COLLECTOR_API_TOKEN=你的随机字符串
-
-# ---- Worker 调度参数（可选，有默认值）----
-# 两次抓取之间的随机等待范围（秒）
+# ---- Worker 抓取（终端 3）----
 WORKER_MIN_DELAY_SECONDS=30
 WORKER_MAX_DELAY_SECONDS=180
-# 候选池为空时的轮询间隔（秒）
 WORKER_IDLE_SLEEP_SECONDS=60
-# HTTP 请求超时（秒）
 WORKER_FETCH_TIMEOUT_SECONDS=20
+WORKER_MAX_ARTICLE_AGE_DAYS=14      # 丢弃过旧文章，0=不限制
+
+# ---- 搜狗 Playwright 发现（终端 2）----
+SOGOU_PLAYWRIGHT_ENABLED=true
+SOGOU_POLL_INTERVAL_SECONDS=14400   # 每轮间隔，默认 4 小时；调试可改 600
+SOGOU_HEADLESS=true                 # 首次养 cookie 时用 false
+SOGOU_MAX_ARTICLE_AGE_DAYS=14
+SOGOU_USER_DATA_DIR=.playwright/sogou
 ```
+
+完整变量说明见项目根目录 **`.env.example`**。
 
 **生成随机 Token：**
 
@@ -226,7 +341,8 @@ uvicorn wechat_collector.api.app:app --host 0.0.0.0 --port 8787 --workers 2
 | 地址                              | 说明                   |
 | ------------------------------- | -------------------- |
 | `http://127.0.0.1:8787/healthz` | 健康检查                 |
-| `http://127.0.0.1:8787/admin`   | 文章管理后台（输入 Token 后加载） |
+| `http://127.0.0.1:8787/admin`   | 文章阅读台（输入 Token 后加载） |
+| `http://127.0.0.1:8787/admin/manage` | 公众号管理 + 环境配置 |
 | `http://127.0.0.1:8787/docs`    | Swagger 接口文档         |
 | `http://127.0.0.1:8787/redoc`   | ReDoc 接口文档           |
 
@@ -410,9 +526,10 @@ sqlite3 wechat_collector.db \
 
 ## 10. Worker 常驻进程
 
-> 📁 在项目根目录（`BasicWebCrawler/`）执行。
+> 📁 在项目根目录（`BasicWebCrawler/`）执行。  
+> 在推荐流程里，这是 **终端 3**：消费 sogou_poller / 手动入队写入的 URL，抓取并入库。
 
-Worker 是一个持续运行的后台进程，消费候选池（方式 C 入队的 URL），随机间隔抓取以避免被反爬识别。
+Worker 是一个持续运行的后台进程，消费候选池中的 URL，随机间隔抓取以避免被反爬识别。
 
 ### 启动参数
 
@@ -467,7 +584,12 @@ kill <PID>
 A：正常，没有根路由。请访问 `/healthz`、`/admin` 或 `/docs`。
 
 **Q：Worker 运行但候选池一直为空？**  
-A：需要先通过插件手动采集，或用 `enqueue_wechat_urls` 脚本把微信文章 URL 写入候选池。
+A：Worker **只消费**候选池，不会自己找 URL。请先确认：
+
+1. 终端 2 是否在跑 `python -m wechat_collector.worker.sogou_poller`
+2. `.env` 里 `SOGOU_PLAYWRIGHT_ENABLED=true`
+3. 是否已执行 `playwright install chromium` 并完成首次 headful 养 cookie
+4. 或用 `enqueue_wechat_urls` / 插件手动入队 URL
 
 **Q：采集时遇到「环境异常」或「验证码」？**  
 A：微信服务器检测到非浏览器请求。解决方法：
@@ -494,6 +616,8 @@ python -m wechat_collector.io.import_wechat_accounts samples/pilot_wechat_accoun
 
 
 ## 12. Playwright 搜狗发现（推荐）
+
+> 若已按 [第 2 节](#2-环境准备与快速上手推荐) 跑通，本节为**详细配置、日志解读与排错**。
 
 当搜狗 HTTP 抓取被反爬拦截时，使用 **Playwright 真实浏览器**从搜狗微信搜索跟随跳转，解析真实的 `mp.weixin.qq.com/s/...` URL 并入候选池。
 
