@@ -91,10 +91,17 @@
       animation: fadeIn 0.5s var(--ease-out);
     }
 
-    .topbar {
+    .sticky-header {
       position: sticky;
       top: 0;
       z-index: 100;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .topbar {
       flex-shrink: 0;
       display: flex;
       align-items: center;
@@ -288,6 +295,94 @@
 
     .stat-dot.loading {
       animation: pulseDot 1.2s ease infinite;
+    }
+
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 16px;
+      padding: 12px 20px;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      background: var(--surface);
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .filter-bar.disabled {
+      opacity: 0.55;
+      pointer-events: none;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-group label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .filter-bar select,
+    .filter-bar input[type="date"] {
+      padding: 8px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: var(--surface-solid);
+      font: inherit;
+      font-size: 13px;
+      color: var(--text);
+      min-width: 0;
+    }
+
+    .filter-bar select {
+      max-width: 240px;
+    }
+
+    .filter-bar select:focus,
+    .filter-bar input[type="date"]:focus {
+      outline: none;
+      border-color: rgba(5, 150, 105, 0.45);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .filter-custom-dates {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-custom-dates.visible {
+      display: flex;
+    }
+
+    .filter-custom-dates span {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .filter-count {
+      margin-left: auto;
+      font-size: 13px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .filter-count strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .btn-filter-clear {
+      padding: 8px 14px;
+      font-size: 13px;
     }
 
     .workspace {
@@ -859,31 +954,67 @@
 </head>
 <body>
   <div class="app-shell">
-    <header class="topbar">
-      <div class="topbar-left">
-        <div class="brand">
-          <div class="brand-mark">采</div>
-          <div>
-            <h1>采集阅读台</h1>
-            <p>微信公众号文章 · 浏览与正文预览</p>
+    <div class="sticky-header">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="brand">
+            <div class="brand-mark">采</div>
+            <div>
+              <h1>采集阅读台</h1>
+              <p>微信公众号文章 · 浏览与正文预览</p>
+            </div>
+          </div>
+          <div class="toolbar">
+            <div class="input-wrap">
+              <span class="input-icon">🔑</span>
+              <input id="token" type="password" placeholder="粘贴 API Token" autocomplete="off" />
+            </div>
+            <button class="btn btn-primary" id="load">加载文章</button>
+            <button class="btn btn-secondary" id="refresh" type="button" title="重新拉取最新文章列表" disabled>刷新</button>
+            <a class="link-btn" href="/admin/manage" style="margin:0">采集管理</a>
           </div>
         </div>
-        <div class="toolbar">
-          <div class="input-wrap">
-            <span class="input-icon">🔑</span>
-            <input id="token" type="password" placeholder="粘贴 API Token" autocomplete="off" />
-          </div>
-          <button class="btn btn-primary" id="load">加载文章</button>
-          <button class="btn btn-secondary" id="refresh" type="button" title="重新拉取最新文章列表" disabled>刷新</button>
-          <a class="link-btn" href="/admin/manage" style="margin:0">采集管理</a>
+        <div class="stats-row">
+          <span class="stat-pill" id="stat-count"><span class="stat-dot loading"></span>等待加载</span>
+          <span class="stat-pill" id="stat-content">正文覆盖率 —</span>
+          <span class="stat-pill" id="stat-status">—</span>
         </div>
+      </header>
+
+      <div class="filter-bar disabled" id="filter-bar">
+        <div class="filter-group">
+          <label for="filter-account">公众号</label>
+          <select id="filter-account" disabled>
+            <option value="">全部</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label for="filter-time">时间</label>
+          <select id="filter-time" disabled>
+            <option value="all">全部</option>
+            <option value="today">今天</option>
+            <option value="7d">近 7 天</option>
+            <option value="30d">近 30 天</option>
+            <option value="90d">近 90 天</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+        <div class="filter-custom-dates" id="filter-custom-dates">
+          <input type="date" id="filter-date-from" disabled aria-label="开始日期" />
+          <span>至</span>
+          <input type="date" id="filter-date-to" disabled aria-label="结束日期" />
+        </div>
+        <div class="filter-group">
+          <label for="filter-time-field">依据</label>
+          <select id="filter-time-field" disabled title="发布时间缺省时回退采集时间">
+            <option value="publish">发布时间（缺省回退采集）</option>
+            <option value="collected">仅采集时间</option>
+          </select>
+        </div>
+        <button class="btn btn-secondary btn-filter-clear" id="filter-clear" type="button" disabled>清除筛选</button>
+        <div class="filter-count" id="filter-count">显示 — / — 篇 · 基于已加载</div>
       </div>
-      <div class="stats-row">
-        <span class="stat-pill" id="stat-count"><span class="stat-dot loading"></span>等待加载</span>
-        <span class="stat-pill" id="stat-content">正文覆盖率 —</span>
-        <span class="stat-pill" id="stat-status">—</span>
-      </div>
-    </header>
+    </div>
 
     <div class="workspace">
       <aside class="panel list-panel">
@@ -917,6 +1048,17 @@
     const statStatus = document.getElementById('stat-status');
     const rowsEl = document.getElementById('rows');
     const detailEl = document.getElementById('detail');
+    const filterBarEl = document.getElementById('filter-bar');
+    const filterAccountEl = document.getElementById('filter-account');
+    const filterTimeEl = document.getElementById('filter-time');
+    const filterTimeFieldEl = document.getElementById('filter-time-field');
+    const filterCustomDatesEl = document.getElementById('filter-custom-dates');
+    const filterDateFromEl = document.getElementById('filter-date-from');
+    const filterDateToEl = document.getElementById('filter-date-to');
+    const filterClearBtn = document.getElementById('filter-clear');
+    const filterCountEl = document.getElementById('filter-count');
+
+    const FILTER_STORAGE_KEY = 'wc_admin_filters';
 
     let articles = [];
     let filteredArticles = [];
@@ -924,8 +1066,216 @@
     let activeTab = 'preview';
     let currentArticle = null;
 
+    const filterState = {
+      account: '',
+      timePreset: 'all',
+      timeField: 'publish',
+      dateFrom: '',
+      dateTo: '',
+    };
+
     const savedToken = sessionStorage.getItem('wc_admin_token');
     if (savedToken) tokenInput.value = savedToken;
+
+    function loadFilterState() {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(FILTER_STORAGE_KEY) || '{}');
+        if (typeof saved.account === 'string') filterState.account = saved.account;
+        if (typeof saved.timePreset === 'string') filterState.timePreset = saved.timePreset;
+        if (saved.timeField === 'publish' || saved.timeField === 'collected') {
+          filterState.timeField = saved.timeField;
+        }
+        if (typeof saved.dateFrom === 'string') filterState.dateFrom = saved.dateFrom;
+        if (typeof saved.dateTo === 'string') filterState.dateTo = saved.dateTo;
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    function saveFilterState() {
+      sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filterState));
+    }
+
+    function syncFilterControlsFromState() {
+      filterAccountEl.value = filterState.account;
+      filterTimeEl.value = filterState.timePreset;
+      filterTimeFieldEl.value = filterState.timeField;
+      filterDateFromEl.value = filterState.dateFrom;
+      filterDateToEl.value = filterState.dateTo;
+      filterCustomDatesEl.classList.toggle('visible', filterState.timePreset === 'custom');
+    }
+
+    function readFilterControlsIntoState() {
+      filterState.account = filterAccountEl.value;
+      filterState.timePreset = filterTimeEl.value;
+      filterState.timeField = filterTimeFieldEl.value;
+      filterState.dateFrom = filterDateFromEl.value;
+      filterState.dateTo = filterDateToEl.value;
+      filterCustomDatesEl.classList.toggle('visible', filterState.timePreset === 'custom');
+    }
+
+    function setFilterBarEnabled(enabled) {
+      filterBarEl.classList.toggle('disabled', !enabled);
+      filterAccountEl.disabled = !enabled;
+      filterTimeEl.disabled = !enabled;
+      filterTimeFieldEl.disabled = !enabled;
+      filterDateFromEl.disabled = !enabled || filterState.timePreset !== 'custom';
+      filterDateToEl.disabled = !enabled || filterState.timePreset !== 'custom';
+      filterClearBtn.disabled = !enabled;
+    }
+
+    function hasActiveFilters() {
+      return Boolean(
+        filterState.account ||
+        filterState.timePreset !== 'all' ||
+        filterInput.value.trim()
+      );
+    }
+
+    function articleTime(article, field) {
+      if (field === 'collected') return article.collected_at;
+      return article.publish_time || article.collected_at;
+    }
+
+    function getTimeRange(preset, dateFrom, dateTo) {
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      switch (preset) {
+        case 'today':
+          return [startOfToday, now];
+        case '7d':
+          return [new Date(startOfToday.getTime() - 6 * 86400000), now];
+        case '30d':
+          return [new Date(startOfToday.getTime() - 29 * 86400000), now];
+        case '90d':
+          return [new Date(startOfToday.getTime() - 89 * 86400000), now];
+        case 'custom': {
+          if (!dateFrom && !dateTo) return null;
+          const from = dateFrom ? new Date(`${dateFrom}T00:00:00`) : new Date(0);
+          const to = dateTo ? new Date(`${dateTo}T23:59:59.999`) : now;
+          return [from, to];
+        }
+        default:
+          return null;
+      }
+    }
+
+    function inTimeRange(article, field, preset, dateFrom, dateTo) {
+      if (preset === 'all') return true;
+      const iso = articleTime(article, field);
+      if (!iso) return false;
+      const range = getTimeRange(preset, dateFrom, dateTo);
+      if (!range) return true;
+      const t = new Date(iso).getTime();
+      return t >= range[0].getTime() && t <= range[1].getTime();
+    }
+
+    function matchKeyword(article, query) {
+      if (!query) return true;
+      const q = query.toLowerCase();
+      return (
+        (article.title || '').toLowerCase().includes(q) ||
+        (article.account_name || '').toLowerCase().includes(q)
+      );
+    }
+
+    function populateAccountDropdown() {
+      const counts = new Map();
+      for (const article of articles) {
+        const name = article.account_name || '未知公众号';
+        counts.set(name, (counts.get(name) || 0) + 1);
+      }
+      const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      const previous = filterState.account;
+
+      filterAccountEl.innerHTML = '';
+      const allOpt = document.createElement('option');
+      allOpt.value = '';
+      allOpt.textContent = '全部';
+      filterAccountEl.appendChild(allOpt);
+
+      for (const [name, count] of sorted) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = `${name} (${count})`;
+        filterAccountEl.appendChild(opt);
+      }
+
+      if (previous && sorted.some(([name]) => name === previous)) {
+        filterState.account = previous;
+      } else if (previous && previous !== '') {
+        filterState.account = '';
+      }
+      filterAccountEl.value = filterState.account;
+    }
+
+    function updateFilterCount() {
+      const n = filteredArticles.length;
+      const m = articles.length;
+      filterCountEl.innerHTML = `显示 <strong>${n}</strong> / ${m} 篇 · 基于已加载`;
+    }
+
+    function renderFilteredEmptyDetail() {
+      detailEl.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <div>没有匹配的文章<br />请调整筛选条件或关键词</div>
+        </div>`;
+    }
+
+    async function reconcileSelectionAfterFilter() {
+      if (!filteredArticles.length) {
+        selectedId = null;
+        renderFilteredEmptyDetail();
+        return;
+      }
+      if (!filteredArticles.some((a) => a.id === selectedId)) {
+        await loadDetail(filteredArticles[0].id, { preserveTab: true });
+      }
+    }
+
+    function applyAllFilters({ adjustSelection = true } = {}) {
+      readFilterControlsIntoState();
+      saveFilterState();
+      setFilterBarEnabled(true);
+
+      const keyword = filterInput.value.trim();
+      filteredArticles = articles.filter((article) => {
+        if (filterState.account && (article.account_name || '') !== filterState.account) {
+          return false;
+        }
+        if (!inTimeRange(
+          article,
+          filterState.timeField,
+          filterState.timePreset,
+          filterState.dateFrom,
+          filterState.dateTo
+        )) {
+          return false;
+        }
+        return matchKeyword(article, keyword);
+      });
+
+      updateFilterCount();
+      syncStatsFromFilter();
+      renderList();
+      if (adjustSelection) {
+        reconcileSelectionAfterFilter();
+      }
+    }
+
+    function clearAllFilters() {
+      filterState.account = '';
+      filterState.timePreset = 'all';
+      filterState.timeField = 'publish';
+      filterState.dateFrom = '';
+      filterState.dateTo = '';
+      syncFilterControlsFromState();
+      filterInput.value = '';
+      saveFilterState();
+      applyAllFilters();
+    }
 
     function authHeaders() {
       return { 'X-API-Token': tokenInput.value.trim() };
@@ -948,6 +1298,20 @@
       statContent.innerHTML = `正文覆盖 <strong>${rate}%</strong>`;
       statStatus.textContent = status;
       statStatus.className = 'stat-pill' + (isError ? ' error' : '');
+    }
+
+    let loadedStatusMessage = '—';
+
+    function syncStatsFromFilter() {
+      if (!articles.length) return;
+      const pool = hasActiveFilters() ? filteredArticles : articles;
+      const withContent = pool.filter((a) => a.has_content).length;
+      setStats({
+        total: pool.length,
+        withContent,
+        status: hasActiveFilters() ? `已筛选 · ${articles.length} 篇已加载` : loadedStatusMessage,
+        isError: statStatus.classList.contains('error'),
+      });
     }
 
     function sanitizeWechatInlineStyle(style) {
@@ -1093,8 +1457,12 @@
     }
 
     function renderList() {
+      if (!articles.length) {
+        rowsEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div>暂无文章</div></div>';
+        return;
+      }
       if (!filteredArticles.length) {
-        rowsEl.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div>没有匹配的文章</div></div>';
+        rowsEl.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div>无匹配文章<br />请调整筛选条件</div></div>';
         return;
       }
       rowsEl.innerHTML = filteredArticles.map((item, i) => `
@@ -1201,16 +1569,6 @@
       }
     }
 
-    function applyFilter() {
-      const q = filterInput.value.trim().toLowerCase();
-      filteredArticles = q
-        ? articles.filter((a) =>
-            (a.title || '').toLowerCase().includes(q) ||
-            (a.account_name || '').toLowerCase().includes(q))
-        : [...articles];
-      renderList();
-    }
-
     async function loadArticles({ refresh = false } = {}) {
       const token = tokenInput.value.trim();
       if (!token) {
@@ -1219,7 +1577,7 @@
       }
 
       const prevSelectedId = selectedId;
-      const prevFilter = filterInput.value;
+      const prevKeyword = filterInput.value;
 
       sessionStorage.setItem('wc_admin_token', token);
       setStats({
@@ -1243,38 +1601,42 @@
         articles = await resp.json();
         filterInput.disabled = false;
 
+        populateAccountDropdown();
+        syncFilterControlsFromState();
+        setFilterBarEnabled(true);
+
         if (refresh) {
-          filterInput.value = prevFilter;
-          applyFilter();
-        } else {
-          filteredArticles = [...articles];
-          filterInput.value = '';
+          filterInput.value = prevKeyword;
         }
 
-        const withContent = articles.filter((a) => a.has_content).length;
-        const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-        setStats({
-          total: articles.length,
-          withContent,
-          status: refresh ? `已刷新 ${now}` : '点击左侧切换文章',
-          isError: false,
-        });
+        applyAllFilters({ adjustSelection: false });
 
-        renderList();
+        const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        loadedStatusMessage = refresh ? `已刷新 ${now}` : '点击左侧切换文章';
+        syncStatsFromFilter();
+        if (!hasActiveFilters()) {
+          statStatus.textContent = loadedStatusMessage;
+        }
+
         refreshBtn.disabled = false;
 
         if (articles.length === 0) {
           selectedId = null;
+          setFilterBarEnabled(false);
+          filterCountEl.innerHTML = '显示 <strong>0</strong> / 0 篇 · 基于已加载';
           detailEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div>暂无文章</div></div>';
           return;
         }
 
-        const targetId = refresh && prevSelectedId && articles.some((a) => a.id === prevSelectedId)
+        const targetId = refresh && prevSelectedId && filteredArticles.some((a) => a.id === prevSelectedId)
           ? prevSelectedId
-          : (filteredArticles[0]?.id ?? articles[0].id);
+          : filteredArticles[0]?.id;
 
         if (targetId != null) {
           await loadDetail(targetId, { preserveTab: refresh });
+        } else {
+          selectedId = null;
+          renderFilteredEmptyDetail();
         }
       } catch (err) {
         setStats({
@@ -1286,6 +1648,7 @@
         if (!refresh) {
           detailEl.innerHTML = '';
           rowsEl.innerHTML = '';
+          setFilterBarEnabled(false);
         }
         refreshBtn.disabled = articles.length === 0;
       } finally {
@@ -1293,9 +1656,23 @@
       }
     }
 
+    loadFilterState();
+    syncFilterControlsFromState();
+
     document.getElementById('load').addEventListener('click', () => loadArticles());
     refreshBtn.addEventListener('click', () => loadArticles({ refresh: true }));
-    filterInput.addEventListener('input', applyFilter);
+    filterInput.addEventListener('input', () => applyAllFilters());
+    filterAccountEl.addEventListener('change', () => applyAllFilters());
+    filterTimeEl.addEventListener('change', () => {
+      readFilterControlsIntoState();
+      filterDateFromEl.disabled = filterState.timePreset !== 'custom';
+      filterDateToEl.disabled = filterState.timePreset !== 'custom';
+      applyAllFilters();
+    });
+    filterTimeFieldEl.addEventListener('change', () => applyAllFilters());
+    filterDateFromEl.addEventListener('change', () => applyAllFilters());
+    filterDateToEl.addEventListener('change', () => applyAllFilters());
+    filterClearBtn.addEventListener('click', clearAllFilters);
     tokenInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') loadArticles();
     });
