@@ -7,7 +7,7 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from wechat_collector.db.models import Organization, WechatAccount
@@ -204,6 +204,160 @@ def list_wechat_accounts_for_org(db: Session, org_id: int) -> list[WechatAccount
         .order_by(WechatAccount.id)
     )
     return list(db.scalars(stmt))
+
+
+def list_pilot_accounts(db: Session, *, include_inactive: bool = False) -> list[dict[str, Any]]:
+    """扁平列表：组织 + 绑定公众号（对齐 pilot_wechat_accounts.csv）。"""
+    stmt = (
+        select(WechatAccount, Organization)
+        .join(Organization, WechatAccount.org_id == Organization.id)
+        .order_by(Organization.org_code, WechatAccount.id)
+    )
+    if not include_inactive:
+        stmt = stmt.where(
+            Organization.status == "active",
+            WechatAccount.status == "active",
+        )
+    rows: list[dict[str, Any]] = []
+    for account, org in db.execute(stmt).all():
+        aliases = org.aliases or []
+        alias_str = ";".join(aliases) if isinstance(aliases, list) else str(aliases)
+        rows.append(
+            {
+                "account_id": account.id,
+                "org_id": org.id,
+                "org_code": org.org_code,
+                "org_name": org.org_name,
+                "account_name": account.account_name,
+                "aliases": alias_str,
+                "priority": org.priority,
+                "status": org.status if account.status == "active" else account.status,
+                "biz": account.biz,
+                "wechat_id": account.wechat_id,
+            }
+        )
+    return rows
+
+
+def _next_org_code(db: Session, prefix: str = "wc_") -> str:
+    orgs = list(db.scalars(select(Organization.org_code).where(Organization.org_code.is_not(None))))
+    max_num = 0
+    for code in orgs:
+        if code and code.startswith(prefix):
+            suffix = code[len(prefix) :]
+            if suffix.isdigit():
+                max_num = max(max_num, int(suffix))
+    return f"{prefix}{max_num + 1:03d}"
+
+
+def create_pilot_account_row(
+    db: Session,
+    *,
+    org_code: str | None,
+    org_name: str,
+    account_name: str,
+    aliases: str | list[str] | None = None,
+    priority: str = "normal",
+) -> dict[str, Any]:
+    code = org_code.strip() if org_code else _next_org_code(db)
+    org = upsert_organization_by_code(
+        db,
+        org_code=code,
+        org_name=org_name,
+        aliases=aliases,
+        priority=priority,
+        status="active",
+    )
+    existing = db.scalar(
+        select(WechatAccount).where(
+            WechatAccount.org_id == org.id,
+            WechatAccount.account_name == normalize_text(account_name),
+        )
+    )
+    if existing:
+        if existing.status != "active":
+            existing.status = "active"
+            db.commit()
+            db.refresh(existing)
+        account = existing
+    else:
+        account = bind_wechat_account(
+            db,
+            org.id,
+            account_name=account_name,
+            alias_names=aliases,
+            status="active",
+        )
+    rows = list_pilot_accounts(db, include_inactive=True)
+    match = next(r for r in rows if r["account_id"] == account.id)
+    return match
+
+
+def update_pilot_account_row(
+    db: Session,
+    account_id: int,
+    *,
+    org_code: str | None = None,
+    org_name: str | None = None,
+    account_name: str | None = None,
+    aliases: str | list[str] | None = None,
+    priority: str | None = None,
+    status: str | None = None,
+) -> dict[str, Any]:
+    account = db.get(WechatAccount, account_id)
+    if account is None or account.org_id is None:
+        raise ValueError(f"Wechat account not found or unbound: {account_id}")
+    org = db.get(Organization, account.org_id)
+    if org is None:
+        raise ValueError(f"Organization not found for account: {account_id}")
+
+    if org_code is not None and org_code.strip() and org_code != org.org_code:
+        conflict = db.scalar(select(Organization).where(Organization.org_code == org_code))
+        if conflict and conflict.id != org.id:
+            raise ValueError(f"org_code already exists: {org_code}")
+        org.org_code = org_code.strip()
+
+    if org_name is not None:
+        org.org_name = normalize_text(org_name)
+    if aliases is not None:
+        org.aliases = normalize_aliases(aliases)
+    if priority is not None:
+        org.priority = priority
+    if status is not None:
+        org.status = status
+        account.status = status
+
+    if account_name is not None:
+        account.account_name = normalize_text(account_name)
+
+    db.commit()
+    db.refresh(org)
+    db.refresh(account)
+    rows = list_pilot_accounts(db, include_inactive=True)
+    return next(r for r in rows if r["account_id"] == account.id)
+
+
+def delete_pilot_account_row(db: Session, account_id: int) -> None:
+    account = db.get(WechatAccount, account_id)
+    if account is None:
+        raise ValueError(f"Wechat account not found: {account_id}")
+    account.status = "inactive"
+    org_id = account.org_id
+    db.commit()
+    if org_id is not None:
+        active_count = db.scalar(
+            select(func.count())
+            .select_from(WechatAccount)
+            .where(
+                WechatAccount.org_id == org_id,
+                WechatAccount.status == "active",
+            )
+        )
+        if not active_count:
+            org = db.get(Organization, org_id)
+            if org:
+                org.status = "inactive"
+                db.commit()
 
 
 def verify_wechat_account_mapping(db: Session, account_id: int) -> WechatAccount:

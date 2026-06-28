@@ -190,3 +190,49 @@ class AlertItem(BaseModel):
 class MonitoringRefreshResponse(BaseModel):
     accounts_updated: int
     alerts: list[AlertItem]
+
+
+class PilotAccountRow(BaseModel):
+    account_id: int
+    org_id: int
+    org_code: str | None
+    org_name: str
+    account_name: str
+    aliases: str = ""
+    priority: str = "normal"
+    status: str = "active"
+    biz: str | None = None
+    wechat_id: str | None = None
+
+
+class PilotAccountCreateBody(BaseModel):
+    org_code: str | None = None
+    org_name: str
+    account_name: str
+    aliases: str | None = None
+    priority: str = "normal"
+
+
+class PilotAccountUpdateBody(BaseModel):
+    org_code: str | None = None
+    org_name: str | None = None
+    account_name: str | None = None
+    aliases: str | None = None
+    priority: str | None = None
+    status: str | None = None
+
+
+class AdminSettingItem(BaseModel):
+    key: str
+    label: str
+    group: str
+    group_label: str
+    type: str
+    description: str
+    sensitive: bool = False
+    default: str | int | float | bool | None = None
+    value: str | int | float | bool
+
+
+class AdminSettingsUpdateBody(BaseModel):
+    values: dict[str, str]

@@ -159,6 +159,11 @@
       min-width: 280px;
     }
 
+    .toolbar .link-btn {
+      margin-bottom: 0;
+      white-space: nowrap;
+    }
+
     .input-wrap {
       position: relative;
       flex: 1;
@@ -870,6 +875,7 @@
           </div>
           <button class="btn btn-primary" id="load">加载文章</button>
           <button class="btn btn-secondary" id="refresh" type="button" title="重新拉取最新文章列表" disabled>刷新</button>
+          <a class="link-btn" href="/admin/manage" style="margin:0">采集管理</a>
         </div>
       </div>
       <div class="stats-row">
