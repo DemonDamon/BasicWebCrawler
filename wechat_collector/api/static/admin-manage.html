@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>采集管理 · WeChat Collector</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #eceae4;
+      --surface: rgba(255,255,255,0.88);
+      --surface-solid: #fff;
+      --border: rgba(15,23,42,0.08);
+      --border-strong: rgba(15,23,42,0.12);
+      --text: #1c1917;
+      --text-muted: #78716c;
+      --accent: #059669;
+      --accent-soft: rgba(5,150,105,0.12);
+      --danger: #dc2626;
+      --danger-soft: rgba(220,38,38,0.1);
+      --radius: 14px;
+      --shadow-md: 0 8px 24px rgba(15,23,42,0.08);
+      --font: "DM Sans", "Noto Sans SC", system-ui, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; font-family: var(--font); color: var(--text); background: var(--bg); }
+    .shell { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+      padding: 18px 22px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px); box-shadow: var(--shadow-md); margin-bottom: 16px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-mark {
+      width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg,#10b981,#059669);
+      color: #fff; display: grid; place-items: center; font-weight: 700;
+    }
+    .brand h1 { margin: 0; font-size: 1.25rem; }
+    .brand p { margin: 2px 0 0; font-size: 13px; color: var(--text-muted); }
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .input-wrap { position: relative; min-width: 220px; }
+    .input-wrap input {
+      width: 100%; padding: 10px 12px 10px 36px; border: 1px solid var(--border-strong);
+      border-radius: 999px; font: inherit; font-size: 14px;
+    }
+    .input-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; }
+    .btn {
+      border: none; cursor: pointer; font: inherit; font-size: 14px; font-weight: 600;
+      padding: 10px 16px; border-radius: 999px;
+    }
+    .btn-primary { color: #fff; background: linear-gradient(135deg,#10b981,#059669); }
+    .btn-secondary { background: var(--surface-solid); border: 1px solid var(--border-strong); color: var(--text); }
+    .btn-danger { background: var(--danger-soft); color: var(--danger); border: 1px solid rgba(220,38,38,0.2); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .nav-link {
+      text-decoration: none; color: #047857; font-size: 14px; font-weight: 600;
+      padding: 8px 14px; border-radius: 999px; background: var(--accent-soft);
+    }
+    .tabs {
+      display: inline-flex; gap: 4px; padding: 4px; border-radius: 999px;
+      background: rgba(15,23,42,0.05); margin-bottom: 16px;
+    }
+    .tab {
+      border: none; background: transparent; padding: 8px 18px; border-radius: 999px;
+      font: inherit; font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer;
+    }
+    .tab.active { background: var(--surface-solid); color: var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+    .panel {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      box-shadow: var(--shadow-md); overflow: hidden;
+    }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      padding: 14px 18px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.6);
+    }
+    .panel-head h2 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+    .table-wrap { overflow: auto; max-height: calc(100vh - 280px); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+    th { position: sticky; top: 0; background: #f8faf9; font-size: 12px; color: var(--text-muted); z-index: 1; }
+    tr:hover td { background: rgba(5,150,105,0.04); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .badge-high { background: #fef3c7; color: #92400e; }
+    .badge-normal { background: var(--accent-soft); color: #047857; }
+    .badge-inactive { background: var(--danger-soft); color: var(--danger); }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .actions button { padding: 4px 10px; font-size: 12px; border-radius: 8px; }
+    .panel-tip {
+      margin: 0; padding: 10px 18px 0; font-size: 12px; color: var(--text-muted); line-height: 1.55;
+    }
+    .empty { padding: 48px; text-align: center; color: var(--text-muted); }
+    .settings-grid { padding: 18px; display: flex; flex-direction: column; gap: 24px; max-height: calc(100vh - 240px); overflow: auto; }
+    .settings-group h3 {
+      margin: 0 0 12px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted);
+    }
+    .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .field {
+      padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-solid);
+    }
+    .field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .field small { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 8px; line-height: 1.4; }
+    .field input, .field select {
+      width: 100%; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: 8px; font: inherit; font-size: 13px;
+    }
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(15,23,42,0.35); display: none; align-items: center; justify-content: center; z-index: 200;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: min(480px, 92vw); background: var(--surface-solid); border-radius: var(--radius);
+      padding: 22px; box-shadow: var(--shadow-md);
+    }
+    .modal h3 { margin: 0 0 16px; }
+    .form-row { margin-bottom: 12px; }
+    .form-row label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .form-row input, .form-row select {
+      width: 100%; padding: 9px 10px; border: 1px solid var(--border-strong); border-radius: 8px; font: inherit;
+    }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+    .toast {
+      position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; border-radius: 12px;
+      background: #1c1917; color: #fff; font-size: 13px; opacity: 0; transition: opacity 0.25s; z-index: 300;
+    }
+    .toast.show { opacity: 1; }
+    .stat-pill { font-size: 13px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">管</div>
+        <div>
+          <h1>采集管理</h1>
+          <p>试点公众号列表 · 环境配置</p>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="input-wrap">
+          <span class="input-icon">🔑</span>
+          <input id="token" type="password" placeholder="API Token" autocomplete="off" />
+        </div>
+        <button class="btn btn-primary" id="connect">连接</button>
+        <a class="nav-link" href="/admin">← 阅读台</a>
+      </div>
+    </header>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="accounts">公众号列表</button>
+      <button class="tab" data-tab="settings">系统配置</button>
+    </div>
+
+    <section class="panel" id="panel-accounts">
+      <div class="panel-head">
+        <h2>试点公众号 <span class="stat-pill" id="account-count"></span></h2>
+        <div class="toolbar">
+          <button class="btn btn-secondary" id="export-csv" disabled>导出 CSV</button>
+          <button class="btn btn-primary" id="add-account" disabled>新增公众号</button>
+        </div>
+      </div>
+      <p class="panel-tip">补采文章：点「搜狗 ↗」打开搜狗微信搜索 → 打开目标文章 → Chrome 插件「采集当前文章」；在搜狗列表页可用「批量入队（搜狗）」。</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>编码</th><th>组织名</th><th>公众号名</th><th>别名</th><th>优先级</th><th>状态</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="account-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-settings" hidden>
+      <div class="panel-head">
+        <h2>环境变量（写入 .env）</h2>
+        <button class="btn btn-primary" id="save-settings" disabled>保存配置</button>
+      </div>
+      <div class="settings-grid" id="settings-form"></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="modal">
+    <div class="modal">
+      <h3 id="modal-title">新增公众号</h3>
+      <div class="form-row"><label>组织编码 org_code</label><input id="f-org-code" placeholder="留空自动生成 wc_XXX" /></div>
+      <div class="form-row"><label>组织名 *</label><input id="f-org-name" required /></div>
+      <div class="form-row"><label>公众号名 *</label><input id="f-account-name" required /></div>
+      <div class="form-row"><label>别名（分号分隔）</label><input id="f-aliases" placeholder="199IT;别名2" /></div>
+      <div class="form-row"><label>优先级</label>
+        <select id="f-priority"><option value="normal">normal</option><option value="high">high</option></select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="modal-cancel">取消</button>
+        <button class="btn btn-primary" id="modal-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const tokenInput = document.getElementById('token');
+    const accountRows = document.getElementById('account-rows');
+    const settingsForm = document.getElementById('settings-form');
+    const modal = document.getElementById('modal');
+    let accounts = [];
+    let settings = [];
+    let editingId = null;
+    let connected = false;
+
+    const savedToken = sessionStorage.getItem('wc_admin_token');
+    if (savedToken) tokenInput.value = savedToken;
+
+    function authHeaders() {
+      return { 'X-API-Token': tokenInput.value.trim(), 'Content-Type': 'application/json' };
+    }
+
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 2600);
+    }
+
+    function priorityBadge(p) {
+      return p === 'high'
+        ? '<span class="badge badge-high">high</span>'
+        : '<span class="badge badge-normal">normal</span>';
+    }
+
+    function statusBadge(s) {
+      return s === 'active'
+        ? '<span class="badge badge-normal">active</span>'
+        : '<span class="badge badge-inactive">' + escapeHtml(s) + '</span>';
+    }
+
+    function escapeHtml(t) {
+      return String(t).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+    }
+
+    function buildSogouWeixinSearchUrl(accountName) {
+      const q = (accountName || '').trim();
+      if (!q) return null;
+      return `https://weixin.sogou.com/weixin?type=2&query=${encodeURIComponent(q)}&ie=utf8&sort=1`;
+    }
+
+    function openSogouWeixinSearch(accountName) {
+      const url = buildSogouWeixinSearchUrl(accountName);
+      if (!url) return;
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    function setConnected(on) {
+      connected = on;
+      ['export-csv','add-account','save-settings'].forEach(id => {
+        document.getElementById(id).disabled = !on;
+      });
+    }
+
+    async function loadAccounts() {
+      const resp = await fetch('/admin/pilot-accounts?include_inactive=true', { headers: authHeaders() });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      accounts = await resp.json();
+      document.getElementById('account-count').textContent = `（${accounts.length} 条）`;
+      if (!accounts.length) {
+        accountRows.innerHTML = '<tr><td colspan="7" class="empty">暂无公众号，点击「新增」添加</td></tr>';
+        return;
+      }
+      accountRows.innerHTML = accounts.map(a => `
+        <tr>
+          <td><code>${escapeHtml(a.org_code || '—')}</code></td>
+          <td>${escapeHtml(a.org_name)}</td>
+          <td><strong>${escapeHtml(a.account_name)}</strong></td>
+          <td>${escapeHtml(a.aliases || '—')}</td>
+          <td>${priorityBadge(a.priority)}</td>
+          <td>${statusBadge(a.status)}</td>
+          <td class="actions">
+            <button class="btn btn-secondary" data-sogou-id="${a.account_id}" title="搜狗微信搜索此号">搜狗 ↗</button>
+            <button class="btn btn-secondary" data-edit="${a.account_id}">编辑</button>
+            <button class="btn btn-danger" data-del="${a.account_id}">停用</button>
+          </td>
+        </tr>`).join('');
+
+      accountRows.querySelectorAll('[data-edit]').forEach(btn => {
+        btn.addEventListener('click', () => openModal(Number(btn.dataset.edit)));
+      });
+      accountRows.querySelectorAll('[data-sogou-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const account = accounts.find(x => x.account_id === Number(btn.dataset.sogouId));
+          if (account?.account_name) openSogouWeixinSearch(account.account_name);
+        });
+      });
+      accountRows.querySelectorAll('[data-del]').forEach(btn => {
+        btn.addEventListener('click', () => deleteAccount(Number(btn.dataset.del)));
+      });
+    }
+
+    function openModal(accountId = null) {
+      editingId = accountId;
+      document.getElementById('modal-title').textContent = accountId ? '编辑公众号' : '新增公众号';
+      if (accountId) {
+        const a = accounts.find(x => x.account_id === accountId);
+        document.getElementById('f-org-code').value = a?.org_code || '';
+        document.getElementById('f-org-name').value = a?.org_name || '';
+        document.getElementById('f-account-name').value = a?.account_name || '';
+        document.getElementById('f-aliases').value = a?.aliases || '';
+        document.getElementById('f-priority').value = a?.priority || 'normal';
+      } else {
+        ['f-org-code','f-org-name','f-account-name','f-aliases'].forEach(id => {
+          document.getElementById(id).value = '';
+        });
+        document.getElementById('f-priority').value = 'normal';
+      }
+      modal.classList.add('open');
+    }
+
+    function closeModal() {
+      modal.classList.remove('open');
+      editingId = null;
+    }
+
+    async function saveAccount() {
+      const body = {
+        org_code: document.getElementById('f-org-code').value.trim() || null,
+        org_name: document.getElementById('f-org-name').value.trim(),
+        account_name: document.getElementById('f-account-name').value.trim(),
+        aliases: document.getElementById('f-aliases').value.trim() || null,
+        priority: document.getElementById('f-priority').value,
+      };
+      if (!body.org_name || !body.account_name) {
+        toast('请填写组织名和公众号名');
+        return;
+      }
+      const url = editingId ? `/admin/pilot-accounts/${editingId}` : '/admin/pilot-accounts';
+      const method = editingId ? 'PUT' : 'POST';
+      const resp = await fetch(url, { method, headers: authHeaders(), body: JSON.stringify(body) });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || 'HTTP ' + resp.status);
+      }
+      closeModal();
+      await loadAccounts();
+      toast(editingId ? '已更新' : '已新增');
+    }
+
+    async function deleteAccount(id) {
+      if (!confirm('确定停用该公众号？（软删除，可重新新增同名恢复）')) return;
+      const resp = await fetch(`/admin/pilot-accounts/${id}`, { method: 'DELETE', headers: authHeaders() });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      await loadAccounts();
+      toast('已停用');
+    }
+
+    function renderSettings() {
+      const groups = {};
+      settings.forEach(s => {
+        if (!groups[s.group_label]) groups[s.group_label] = [];
+        groups[s.group_label].push(s);
+      });
+      settingsForm.innerHTML = Object.entries(groups).map(([label, fields]) => `
+        <div class="settings-group">
+          <h3>${escapeHtml(label)}</h3>
+          <div class="field-grid">
+            ${fields.map(f => `
+              <div class="field" data-key="${escapeHtml(f.key)}">
+                <label for="cfg-${f.key}">${escapeHtml(f.label)}</label>
+                <small>${escapeHtml(f.description)} · <code>${escapeHtml(f.key)}</code></small>
+                ${f.type === 'bool'
+                  ? `<select id="cfg-${f.key}" data-key="${f.key}">
+                      <option value="true" ${f.value === true ? 'selected' : ''}>true</option>
+                      <option value="false" ${f.value === false ? 'selected' : ''}>false</option>
+                    </select>`
+                  : `<input id="cfg-${f.key}" data-key="${f.key}" value="${escapeHtml(String(f.value ?? ''))}" ${f.sensitive ? 'placeholder="留空则不修改"' : ''} />`}
+              </div>`).join('')}
+          </div>
+        </div>`).join('');
+    }
+
+    async function loadSettings() {
+      const resp = await fetch('/admin/settings', { headers: authHeaders() });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      settings = await resp.json();
+      renderSettings();
+    }
+
+    async function saveSettings() {
+      const values = {};
+      settingsForm.querySelectorAll('[data-key]').forEach(el => {
+        const key = el.dataset.key;
+        if (el.tagName === 'SELECT') values[key] = el.value;
+        else values[key] = el.value;
+      });
+      const resp = await fetch('/admin/settings', {
+        method: 'PUT', headers: authHeaders(), body: JSON.stringify({ values }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || 'HTTP ' + resp.status);
+      }
+      settings = await resp.json();
+      renderSettings();
+      toast('配置已写入 .env（重启 Worker/API 后生效）');
+    }
+
+    async function connect() {
+      const token = tokenInput.value.trim();
+      if (!token) { toast('请先填写 Token'); return; }
+      sessionStorage.setItem('wc_admin_token', token);
+      try {
+        await Promise.all([loadAccounts(), loadSettings()]);
+        setConnected(true);
+        toast('已连接');
+      } catch (err) {
+        setConnected(false);
+        toast('连接失败: ' + err.message);
+      }
+    }
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const isAccounts = tab.dataset.tab === 'accounts';
+        document.getElementById('panel-accounts').hidden = !isAccounts;
+        document.getElementById('panel-settings').hidden = isAccounts;
+      });
+    });
+
+    document.getElementById('connect').addEventListener('click', connect);
+    document.getElementById('add-account').addEventListener('click', () => openModal());
+    document.getElementById('modal-cancel').addEventListener('click', closeModal);
+    document.getElementById('modal-save').addEventListener('click', () => saveAccount().catch(e => toast(e.message)));
+    document.getElementById('save-settings').addEventListener('click', () => saveSettings().catch(e => toast(e.message)));
+    document.getElementById('export-csv').addEventListener('click', async () => {
+      const resp = await fetch('/admin/pilot-accounts/export.csv', { headers: authHeaders() });
+      if (!resp.ok) { toast('导出失败'); return; }
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'pilot_wechat_accounts.csv';
+      a.click();
+    });
+    modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+    if (savedToken) connect();
+  </script>
+</body>
+</html>

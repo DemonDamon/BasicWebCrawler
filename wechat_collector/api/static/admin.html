@@ -1,0 +1,1775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>采集阅读台 · WeChat Collector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #eceae4;
+      --bg-accent: radial-gradient(1200px 600px at 10% -10%, rgba(7, 193, 96, 0.12), transparent 55%),
+        radial-gradient(900px 500px at 90% 0%, rgba(59, 130, 246, 0.1), transparent 50%),
+        linear-gradient(180deg, #f3f1eb 0%, #e8e6df 100%);
+      --surface: rgba(255, 255, 255, 0.82);
+      --surface-solid: #ffffff;
+      --surface-hover: rgba(255, 255, 255, 0.96);
+      --border: rgba(15, 23, 42, 0.08);
+      --border-strong: rgba(15, 23, 42, 0.12);
+      --text: #1c1917;
+      --text-muted: #78716c;
+      --accent: #059669;
+      --accent-soft: rgba(5, 150, 105, 0.12);
+      --accent-glow: rgba(5, 150, 105, 0.35);
+      --danger: #dc2626;
+      --danger-soft: rgba(220, 38, 38, 0.1);
+      --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+      --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.04);
+      --shadow-lg: 0 20px 50px rgba(15, 23, 42, 0.12);
+      --radius: 16px;
+      --radius-sm: 10px;
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+      --font-ui: "DM Sans", "Noto Sans SC", system-ui, sans-serif;
+      --font-serif: "Noto Serif SC", "Noto Sans SC", serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      color: var(--text);
+      font-family: var(--font-ui);
+      background: var(--bg);
+      background-image: var(--bg-accent);
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    @keyframes pulseDot {
+      0%, 100% { opacity: 0.35; transform: scale(0.85); }
+      50% { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .app-shell {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 1600px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 20px 20px 28px;
+      gap: 18px;
+      min-height: 0;
+      overflow: hidden;
+      animation: fadeIn 0.5s var(--ease-out);
+    }
+
+    .sticky-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .topbar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+      padding: 18px 24px;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 4px);
+      background: var(--surface);
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #10b981 0%, #059669 55%, #047857 100%);
+      box-shadow: 0 8px 20px var(--accent-glow);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.03em;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      min-width: 280px;
+    }
+
+    .toolbar .link-btn {
+      margin-bottom: 0;
+      white-space: nowrap;
+    }
+
+    .input-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 220px;
+      max-width: 320px;
+    }
+
+    .input-wrap input {
+      width: 100%;
+      padding: 11px 14px 11px 40px;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      background: var(--surface-solid);
+      font: inherit;
+      font-size: 14px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .input-wrap input:focus {
+      outline: none;
+      border-color: rgba(5, 150, 105, 0.45);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+
+    .input-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: 14px;
+      pointer-events: none;
+    }
+
+    .btn {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 11px 18px;
+      border-radius: 999px;
+      transition: transform 0.15s var(--ease-out), box-shadow 0.2s, background 0.2s;
+    }
+
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      color: #fff;
+      background: linear-gradient(135deg, #10b981, #059669);
+      box-shadow: 0 6px 18px var(--accent-glow);
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 10px 24px var(--accent-glow);
+    }
+
+    .btn-secondary {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.85);
+      border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      border-color: rgba(5, 150, 105, 0.35);
+      color: #047857;
+      background: var(--accent-soft);
+    }
+
+    .btn-secondary:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary.refreshing {
+      pointer-events: none;
+    }
+
+    .btn-secondary.refreshing::before {
+      content: '↻ ';
+      display: inline-block;
+      animation: spin 0.7s linear infinite;
+    }
+
+    .stats-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      align-items: center;
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+
+    .stat-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--text-muted);
+      animation: fadeUp 0.45s var(--ease-out) backwards;
+    }
+
+    .stat-pill strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .stat-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+
+    .stat-dot.loading {
+      animation: pulseDot 1.2s ease infinite;
+    }
+
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 16px;
+      padding: 12px 20px;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      background: var(--surface);
+      backdrop-filter: blur(16px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .filter-bar.disabled {
+      opacity: 0.55;
+      pointer-events: none;
+    }
+
+    .filter-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-group label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .filter-bar select,
+    .filter-bar input[type="date"] {
+      padding: 8px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: var(--surface-solid);
+      font: inherit;
+      font-size: 13px;
+      color: var(--text);
+      min-width: 0;
+    }
+
+    .filter-bar select {
+      max-width: 240px;
+    }
+
+    .filter-bar select:focus,
+    .filter-bar input[type="date"]:focus {
+      outline: none;
+      border-color: rgba(5, 150, 105, 0.45);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .filter-custom-dates {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-custom-dates.visible {
+      display: flex;
+    }
+
+    .filter-custom-dates span {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .filter-count {
+      margin-left: auto;
+      font-size: 13px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .filter-count strong {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .btn-filter-clear {
+      padding: 8px 14px;
+      font-size: 13px;
+    }
+
+    .btn-sogou {
+      white-space: nowrap;
+    }
+
+    .workspace {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(340px, 420px) 1fr;
+      gap: 18px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      background: var(--surface);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      animation: fadeUp 0.55s var(--ease-out) 0.08s backwards;
+    }
+
+    .panel-header {
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.55);
+    }
+
+    .panel-header h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .search-box input {
+      width: 100%;
+      padding: 10px 12px 10px 36px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-solid);
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .search-box {
+      position: relative;
+    }
+
+    .search-box span {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .list-scroll {
+      overflow: auto;
+      flex: 1;
+      padding: 10px;
+      scroll-behavior: smooth;
+    }
+
+    .article-card {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: start;
+      padding: 14px;
+      margin-bottom: 8px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+      background: transparent;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s, transform 0.2s var(--ease-out), box-shadow 0.2s;
+      animation: fadeUp 0.45s var(--ease-out) backwards;
+      animation-delay: calc(var(--i, 0) * 35ms);
+    }
+
+    .article-card:hover {
+      background: var(--surface-hover);
+      border-color: var(--border);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .article-card.active {
+      background: var(--surface-solid);
+      border-color: rgba(5, 150, 105, 0.25);
+      box-shadow: 0 0 0 1px rgba(5, 150, 105, 0.12), var(--shadow-md);
+    }
+
+    .article-card.active .id-chip {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .id-chip {
+      min-width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(15, 23, 42, 0.06);
+      color: var(--text-muted);
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-meta {
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 9px;
+      border-radius: 999px;
+      white-space: nowrap;
+      background: var(--accent-soft);
+      color: #047857;
+    }
+
+    .badge.empty {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .detail-panel {
+      min-height: 0;
+      animation: fadeUp 0.55s var(--ease-out) 0.12s backwards;
+    }
+
+    .detail-scroll {
+      overflow: auto;
+      flex: 1;
+      padding: 0;
+    }
+
+    .detail-inner {
+      animation: fadeUp 0.4s var(--ease-out);
+    }
+
+    .hero {
+      position: relative;
+      min-height: 200px;
+      max-height: 280px;
+      overflow: hidden;
+      background: linear-gradient(135deg, #134e4a, #065f46);
+    }
+
+    .hero img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      min-height: 200px;
+      max-height: 280px;
+    }
+
+    .hero-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.15) 55%, transparent 100%);
+    }
+
+    .hero-placeholder {
+      min-height: 120px;
+      background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+    }
+
+    .detail-body {
+      padding: 24px 28px 32px;
+    }
+
+    .detail-body h2 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.35rem, 2vw, 1.75rem);
+      line-height: 1.35;
+      margin: 0 0 16px;
+      letter-spacing: -0.01em;
+    }
+
+    .hero + .detail-body h2 {
+      margin-top: -4px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .meta-item {
+      padding: 12px 14px;
+      border-radius: var(--radius-sm);
+      background: rgba(255, 255, 255, 0.75);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .meta-item strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .summary {
+      padding: 16px 18px;
+      border-radius: var(--radius-sm);
+      background: linear-gradient(135deg, #fffbeb, #fef3c7);
+      border: 1px solid rgba(245, 158, 11, 0.2);
+      font-size: 14px;
+      line-height: 1.7;
+      margin-bottom: 20px;
+      color: #78350f;
+    }
+
+    .tabs {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.05);
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      border: none;
+      background: transparent;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: color 0.2s, background 0.25s var(--ease-out), box-shadow 0.2s;
+    }
+
+    .tab.active {
+      background: var(--surface-solid);
+      color: var(--accent);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .content-box {
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      line-height: 1.85;
+      font-size: 15px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .content-box.text {
+      white-space: pre-wrap;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.65;
+      color: #44403c;
+    }
+
+    .content-box.article-preview {
+      font-family: var(--font-serif);
+    }
+
+    .content-box.article-preview #js_content,
+    .content-box.article-preview .rich_media_content {
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+
+    .content-box.article-preview img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 18px auto;
+      border-radius: 12px;
+      box-shadow: var(--shadow-md);
+    }
+
+    .content-box.article-preview p { margin: 0.85em 0; }
+
+    .preview-hint {
+      margin: 10px 0 0;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .meta-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .meta-stat-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .meta-stat-card {
+      padding: 16px 18px;
+      border-radius: var(--radius);
+      background: linear-gradient(145deg, #ffffff, #f8faf9);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .meta-stat-card .label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .meta-stat-card .value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .meta-stat-card .unit {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-left: 2px;
+    }
+
+    .meta-section {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface-solid);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .meta-section-title {
+      margin: 0;
+      padding: 12px 18px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: rgba(15, 23, 42, 0.03);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .meta-dl {
+      margin: 0;
+      display: grid;
+      grid-template-columns: 120px 1fr;
+    }
+
+    .meta-dl dt {
+      margin: 0;
+      padding: 12px 18px;
+      font-size: 13px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.5);
+    }
+
+    .meta-dl dd {
+      margin: 0;
+      padding: 12px 18px;
+      font-size: 13px;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      word-break: break-all;
+    }
+
+    .meta-dl dt:last-of-type,
+    .meta-dl dd:last-of-type {
+      border-bottom: none;
+    }
+
+    .meta-dl dd.mono {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .meta-url {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .meta-url a {
+      flex: 1;
+      color: #047857;
+      text-decoration: none;
+      line-height: 1.5;
+    }
+
+    .meta-url a:hover {
+      text-decoration: underline;
+    }
+
+    .copy-btn {
+      flex-shrink: 0;
+      appearance: none;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--text-muted);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+    }
+
+    .copy-btn:hover {
+      color: var(--accent);
+      border-color: rgba(5, 150, 105, 0.35);
+      background: var(--accent-soft);
+    }
+
+    .copy-btn.copied {
+      color: #047857;
+      border-color: rgba(5, 150, 105, 0.45);
+      background: var(--accent-soft);
+    }
+
+    .meta-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #047857;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    @media (max-width: 640px) {
+      .meta-stat-row { grid-template-columns: 1fr; }
+      .meta-dl { grid-template-columns: 1fr; }
+      .meta-dl dt { border-bottom: none; padding-bottom: 4px; }
+    }
+
+    .link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 18px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: #047857;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background 0.2s, transform 0.15s;
+    }
+
+    .link-btn:hover {
+      background: rgba(5, 150, 105, 0.18);
+      transform: translateY(-1px);
+    }
+
+    button.link-btn {
+      border: none;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    button.link-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .detail-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .detail-links .link-btn {
+      margin-bottom: 0;
+    }
+
+    .sogou-hint {
+      margin: 0 0 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.55;
+    }
+
+    .note {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 56px 32px;
+      color: var(--text-muted);
+      gap: 12px;
+      min-height: 280px;
+    }
+
+    .empty-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 18px;
+      background: rgba(15, 23, 42, 0.05);
+      display: grid;
+      place-items: center;
+      font-size: 24px;
+    }
+
+    .skeleton {
+      background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s ease infinite;
+      border-radius: 8px;
+    }
+
+    .skeleton-block { height: 14px; margin-bottom: 10px; }
+    .skeleton-title { height: 28px; width: 70%; margin-bottom: 16px; }
+    .skeleton-hero { height: 180px; border-radius: 0; margin: 0; }
+
+    .error { color: var(--danger); }
+
+    .loader {
+      width: 28px;
+      height: 28px;
+      border: 3px solid rgba(5, 150, 105, 0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @media (max-width: 960px) {
+      html, body { overflow: auto; }
+      .app-shell { overflow: visible; }
+      .topbar { position: sticky; top: 0; }
+      .topbar-left { width: 100%; }
+      .stats-row { width: 100%; margin-left: 0; justify-content: flex-start; }
+      .workspace {
+        grid-template-columns: 1fr;
+        overflow: visible;
+      }
+      .panel { min-height: 360px; }
+      .list-scroll { max-height: 42vh; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <div class="sticky-header">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="brand">
+            <div class="brand-mark">采</div>
+            <div>
+              <h1>采集阅读台</h1>
+              <p>微信公众号文章 · 浏览与正文预览</p>
+            </div>
+          </div>
+          <div class="toolbar">
+            <div class="input-wrap">
+              <span class="input-icon">🔑</span>
+              <input id="token" type="password" placeholder="粘贴 API Token" autocomplete="off" />
+            </div>
+            <button class="btn btn-primary" id="load">加载文章</button>
+            <button class="btn btn-secondary" id="refresh" type="button" title="重新拉取最新文章列表" disabled>刷新</button>
+            <button class="btn btn-secondary" id="open-sogou-topbar" type="button" title="在新标签打开搜狗微信搜索；优先左侧关键词，否则当前筛选/文章的公众号">搜狗微信 ↗</button>
+            <a class="link-btn" href="/admin/manage" style="margin:0">采集管理</a>
+          </div>
+        </div>
+        <div class="stats-row">
+          <span class="stat-pill" id="stat-count"><span class="stat-dot loading"></span>等待加载</span>
+          <span class="stat-pill" id="stat-content">正文覆盖率 —</span>
+          <span class="stat-pill" id="stat-status">—</span>
+        </div>
+      </header>
+
+      <div class="filter-bar disabled" id="filter-bar">
+        <div class="filter-group">
+          <label for="filter-account">公众号</label>
+          <select id="filter-account" disabled>
+            <option value="">全部</option>
+          </select>
+          <button class="btn btn-secondary btn-sogou" id="open-sogou-search" type="button" disabled title="在新标签打开搜狗微信搜索该公众号">搜狗搜号 ↗</button>
+        </div>
+        <div class="filter-group">
+          <label for="filter-time">时间</label>
+          <select id="filter-time" disabled>
+            <option value="all">全部</option>
+            <option value="today">今天</option>
+            <option value="7d">近 7 天</option>
+            <option value="30d">近 30 天</option>
+            <option value="90d">近 90 天</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+        <div class="filter-custom-dates" id="filter-custom-dates">
+          <input type="date" id="filter-date-from" disabled aria-label="开始日期" />
+          <span>至</span>
+          <input type="date" id="filter-date-to" disabled aria-label="结束日期" />
+        </div>
+        <div class="filter-group">
+          <label for="filter-time-field">依据</label>
+          <select id="filter-time-field" disabled title="发布时间缺省时回退采集时间">
+            <option value="publish">发布时间（缺省回退采集）</option>
+            <option value="collected">仅采集时间</option>
+          </select>
+        </div>
+        <button class="btn btn-secondary btn-filter-clear" id="filter-clear" type="button" disabled>清除筛选</button>
+        <div class="filter-count" id="filter-count">显示 — / — 篇 · 基于已加载</div>
+      </div>
+    </div>
+
+    <div class="workspace">
+      <aside class="panel list-panel">
+        <div class="panel-header">
+          <h2>文章列表</h2>
+          <div class="search-box">
+            <span>⌕</span>
+            <input id="filter" type="search" placeholder="搜索标题或公众号…" disabled />
+          </div>
+        </div>
+        <div class="list-scroll" id="rows"></div>
+      </aside>
+
+      <main class="panel detail-panel">
+        <div class="detail-scroll" id="detail">
+          <div class="empty-state">
+            <div class="empty-icon">📖</div>
+            <div>输入 Token 并加载文章<br />左侧选择条目，在此阅读正文</div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script>
+    const tokenInput = document.getElementById('token');
+    const filterInput = document.getElementById('filter');
+    const refreshBtn = document.getElementById('refresh');
+    const statCount = document.getElementById('stat-count');
+    const statContent = document.getElementById('stat-content');
+    const statStatus = document.getElementById('stat-status');
+    const rowsEl = document.getElementById('rows');
+    const detailEl = document.getElementById('detail');
+    const filterBarEl = document.getElementById('filter-bar');
+    const filterAccountEl = document.getElementById('filter-account');
+    const filterTimeEl = document.getElementById('filter-time');
+    const filterTimeFieldEl = document.getElementById('filter-time-field');
+    const filterCustomDatesEl = document.getElementById('filter-custom-dates');
+    const filterDateFromEl = document.getElementById('filter-date-from');
+    const filterDateToEl = document.getElementById('filter-date-to');
+    const filterClearBtn = document.getElementById('filter-clear');
+    const filterCountEl = document.getElementById('filter-count');
+    const openSogouSearchBtn = document.getElementById('open-sogou-search');
+    const openSogouTopbarBtn = document.getElementById('open-sogou-topbar');
+
+    const FILTER_STORAGE_KEY = 'wc_admin_filters';
+
+    let articles = [];
+    let filteredArticles = [];
+    let selectedId = null;
+    let activeTab = 'preview';
+    let currentArticle = null;
+
+    const filterState = {
+      account: '',
+      timePreset: 'all',
+      timeField: 'publish',
+      dateFrom: '',
+      dateTo: '',
+    };
+
+    const savedToken = sessionStorage.getItem('wc_admin_token');
+    if (savedToken) tokenInput.value = savedToken;
+
+    function loadFilterState() {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(FILTER_STORAGE_KEY) || '{}');
+        if (typeof saved.account === 'string') filterState.account = saved.account;
+        if (typeof saved.timePreset === 'string') filterState.timePreset = saved.timePreset;
+        if (saved.timeField === 'publish' || saved.timeField === 'collected') {
+          filterState.timeField = saved.timeField;
+        }
+        if (typeof saved.dateFrom === 'string') filterState.dateFrom = saved.dateFrom;
+        if (typeof saved.dateTo === 'string') filterState.dateTo = saved.dateTo;
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    function saveFilterState() {
+      sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(filterState));
+    }
+
+    function syncFilterControlsFromState() {
+      filterAccountEl.value = filterState.account;
+      filterTimeEl.value = filterState.timePreset;
+      filterTimeFieldEl.value = filterState.timeField;
+      filterDateFromEl.value = filterState.dateFrom;
+      filterDateToEl.value = filterState.dateTo;
+      filterCustomDatesEl.classList.toggle('visible', filterState.timePreset === 'custom');
+    }
+
+    function readFilterControlsIntoState() {
+      filterState.account = filterAccountEl.value;
+      filterState.timePreset = filterTimeEl.value;
+      filterState.timeField = filterTimeFieldEl.value;
+      filterState.dateFrom = filterDateFromEl.value;
+      filterState.dateTo = filterDateToEl.value;
+      filterCustomDatesEl.classList.toggle('visible', filterState.timePreset === 'custom');
+    }
+
+    function setFilterBarEnabled(enabled) {
+      filterBarEl.classList.toggle('disabled', !enabled);
+      filterAccountEl.disabled = !enabled;
+      filterTimeEl.disabled = !enabled;
+      filterTimeFieldEl.disabled = !enabled;
+      filterDateFromEl.disabled = !enabled || filterState.timePreset !== 'custom';
+      filterDateToEl.disabled = !enabled || filterState.timePreset !== 'custom';
+      filterClearBtn.disabled = !enabled;
+      syncSogouSearchButton();
+    }
+
+    function hasActiveFilters() {
+      return Boolean(
+        filterState.account ||
+        filterState.timePreset !== 'all' ||
+        filterInput.value.trim()
+      );
+    }
+
+    function articleTime(article, field) {
+      if (field === 'collected') return article.collected_at;
+      return article.publish_time || article.collected_at;
+    }
+
+    function getTimeRange(preset, dateFrom, dateTo) {
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      switch (preset) {
+        case 'today':
+          return [startOfToday, now];
+        case '7d':
+          return [new Date(startOfToday.getTime() - 6 * 86400000), now];
+        case '30d':
+          return [new Date(startOfToday.getTime() - 29 * 86400000), now];
+        case '90d':
+          return [new Date(startOfToday.getTime() - 89 * 86400000), now];
+        case 'custom': {
+          if (!dateFrom && !dateTo) return null;
+          const from = dateFrom ? new Date(`${dateFrom}T00:00:00`) : new Date(0);
+          const to = dateTo ? new Date(`${dateTo}T23:59:59.999`) : now;
+          return [from, to];
+        }
+        default:
+          return null;
+      }
+    }
+
+    function inTimeRange(article, field, preset, dateFrom, dateTo) {
+      if (preset === 'all') return true;
+      const iso = articleTime(article, field);
+      if (!iso) return false;
+      const range = getTimeRange(preset, dateFrom, dateTo);
+      if (!range) return true;
+      const t = new Date(iso).getTime();
+      return t >= range[0].getTime() && t <= range[1].getTime();
+    }
+
+    function matchKeyword(article, query) {
+      if (!query) return true;
+      const q = query.toLowerCase();
+      return (
+        (article.title || '').toLowerCase().includes(q) ||
+        (article.account_name || '').toLowerCase().includes(q)
+      );
+    }
+
+    function populateAccountDropdown() {
+      const counts = new Map();
+      for (const article of articles) {
+        const name = article.account_name || '未知公众号';
+        counts.set(name, (counts.get(name) || 0) + 1);
+      }
+      const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      const previous = filterState.account;
+
+      filterAccountEl.innerHTML = '';
+      const allOpt = document.createElement('option');
+      allOpt.value = '';
+      allOpt.textContent = '全部';
+      filterAccountEl.appendChild(allOpt);
+
+      for (const [name, count] of sorted) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = `${name} (${count})`;
+        filterAccountEl.appendChild(opt);
+      }
+
+      if (previous && sorted.some(([name]) => name === previous)) {
+        filterState.account = previous;
+      } else if (previous && previous !== '') {
+        filterState.account = '';
+      }
+      filterAccountEl.value = filterState.account;
+    }
+
+    function updateFilterCount() {
+      const n = filteredArticles.length;
+      const m = articles.length;
+      filterCountEl.innerHTML = `显示 <strong>${n}</strong> / ${m} 篇 · 基于已加载`;
+    }
+
+    function renderFilteredEmptyDetail() {
+      detailEl.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <div>没有匹配的文章<br />请调整筛选条件或关键词</div>
+        </div>`;
+    }
+
+    async function reconcileSelectionAfterFilter() {
+      if (!filteredArticles.length) {
+        selectedId = null;
+        renderFilteredEmptyDetail();
+        return;
+      }
+      if (!filteredArticles.some((a) => a.id === selectedId)) {
+        await loadDetail(filteredArticles[0].id, { preserveTab: true });
+      }
+    }
+
+    function applyAllFilters({ adjustSelection = true } = {}) {
+      readFilterControlsIntoState();
+      saveFilterState();
+      setFilterBarEnabled(true);
+
+      const keyword = filterInput.value.trim();
+      filteredArticles = articles.filter((article) => {
+        if (filterState.account && (article.account_name || '') !== filterState.account) {
+          return false;
+        }
+        if (!inTimeRange(
+          article,
+          filterState.timeField,
+          filterState.timePreset,
+          filterState.dateFrom,
+          filterState.dateTo
+        )) {
+          return false;
+        }
+        return matchKeyword(article, keyword);
+      });
+
+      updateFilterCount();
+      syncStatsFromFilter();
+      renderList();
+      if (adjustSelection) {
+        reconcileSelectionAfterFilter();
+      }
+    }
+
+    function clearAllFilters() {
+      filterState.account = '';
+      filterState.timePreset = 'all';
+      filterState.timeField = 'publish';
+      filterState.dateFrom = '';
+      filterState.dateTo = '';
+      syncFilterControlsFromState();
+      filterInput.value = '';
+      saveFilterState();
+      applyAllFilters();
+    }
+
+    function buildSogouWeixinSearchUrl(query) {
+      const q = (query || '').trim();
+      const base = 'https://weixin.sogou.com/weixin?type=2&ie=utf8&sort=1';
+      if (!q) return base;
+      return `${base}&query=${encodeURIComponent(q)}`;
+    }
+
+    function getSogouSearchQuery() {
+      if (filterState.account) return filterState.account;
+      if (currentArticle?.account_name) return currentArticle.account_name;
+      return '';
+    }
+
+    function getTopbarSogouSearchQuery() {
+      const keyword = filterInput.value.trim();
+      if (keyword) return keyword;
+      return getSogouSearchQuery();
+    }
+
+    function openSogouWeixinSearch(query) {
+      const url = buildSogouWeixinSearchUrl(
+        query !== undefined ? query : getSogouSearchQuery()
+      );
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    function openSogouWeixinFromTopbar() {
+      const url = buildSogouWeixinSearchUrl(getTopbarSogouSearchQuery());
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    function syncSogouSearchButton() {
+      if (!openSogouSearchBtn) return;
+      const hasQuery = Boolean(getSogouSearchQuery().trim());
+      const barDisabled = filterBarEl.classList.contains('disabled');
+      openSogouSearchBtn.disabled = barDisabled || !hasQuery;
+    }
+
+    function authHeaders() {
+      return { 'X-API-Token': tokenInput.value.trim() };
+    }
+
+    function formatTime(value) {
+      if (!value) return '—';
+      try {
+        return new Date(value).toLocaleString('zh-CN', {
+          month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+        });
+      } catch (_) {
+        return value;
+      }
+    }
+
+    function setStats({ total, withContent, status, isError }) {
+      statCount.innerHTML = `<span class="stat-dot${status === 'loading' ? ' loading' : ''}"></span>共 <strong>${total}</strong> 篇`;
+      const rate = total ? Math.round((withContent / total) * 100) : 0;
+      statContent.innerHTML = `正文覆盖 <strong>${rate}%</strong>`;
+      statStatus.textContent = status;
+      statStatus.className = 'stat-pill' + (isError ? ' error' : '');
+    }
+
+    let loadedStatusMessage = '—';
+
+    function syncStatsFromFilter() {
+      if (!articles.length) return;
+      const pool = hasActiveFilters() ? filteredArticles : articles;
+      const withContent = pool.filter((a) => a.has_content).length;
+      setStats({
+        total: pool.length,
+        withContent,
+        status: hasActiveFilters() ? `已筛选 · ${articles.length} 篇已加载` : loadedStatusMessage,
+        isError: statStatus.classList.contains('error'),
+      });
+    }
+
+    function sanitizeWechatInlineStyle(style) {
+      return style
+        .replace(/visibility\s*:\s*hidden\s*;?/gi, '')
+        .replace(/opacity\s*:\s*0\s*;?/gi, '')
+        .replace(/display\s*:\s*none\s*;?/gi, '')
+        .replace(/;\s*;+/g, ';')
+        .trim()
+        .replace(/^;|;$/g, '')
+        .trim();
+    }
+
+    function prepareArticleHtml(html) {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      doc.querySelectorAll('[style]').forEach((el) => {
+        const cleaned = sanitizeWechatInlineStyle(el.getAttribute('style') || '');
+        if (cleaned) el.setAttribute('style', cleaned);
+        else el.removeAttribute('style');
+      });
+      doc.querySelectorAll('img').forEach((img) => {
+        const src = img.getAttribute('data-src') || img.getAttribute('src');
+        if (src) {
+          img.setAttribute('src', src);
+          img.removeAttribute('data-src');
+        }
+        img.setAttribute('referrerpolicy', 'no-referrer');
+        img.setAttribute('loading', 'lazy');
+      });
+      doc.querySelectorAll('script, iframe, style').forEach((el) => el.remove());
+      return doc.body.innerHTML;
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    function formatDateTime(value) {
+      if (!value) return '—';
+      try {
+        return new Date(value).toLocaleString('zh-CN', {
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+        });
+      } catch (_) {
+        return value;
+      }
+    }
+
+    function formatBytes(num) {
+      if (num < 1024) return num + ' B';
+      if (num < 1024 * 1024) return (num / 1024).toFixed(1) + ' KB';
+      return (num / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function renderMetaRow(label, valueHtml) {
+      return `<dt>${escapeHtml(label)}</dt><dd>${valueHtml}</dd>`;
+    }
+
+    function renderMetaUrl(label, url) {
+      if (!url) return renderMetaRow(label, '—');
+      return renderMetaRow(
+        label,
+        `<div class="meta-url">
+          <a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a>
+          <button type="button" class="copy-btn" data-copy="${escapeHtml(url)}">复制</button>
+        </div>`
+      );
+    }
+
+    function renderMetadataPanel(article) {
+      const contentStatus = article.text_length > 0
+        ? `<span class="meta-badge">有正文</span>`
+        : `<span class="meta-badge" style="background:var(--danger-soft);color:var(--danger)">无正文</span>`;
+
+      return `
+        <div class="meta-panel">
+          <div class="meta-stat-row">
+            <div class="meta-stat-card">
+              <span class="label">正文字数</span>
+              <span class="value">${article.text_length.toLocaleString()}<span class="unit">字</span></span>
+            </div>
+            <div class="meta-stat-card">
+              <span class="label">HTML 体积</span>
+              <span class="value">${formatBytes(article.html_length)}</span>
+            </div>
+            <div class="meta-stat-card">
+              <span class="label">内嵌图片</span>
+              <span class="value">${article.image_count}<span class="unit">张</span></span>
+            </div>
+          </div>
+
+          <section class="meta-section">
+            <h3 class="meta-section-title">标识与关联</h3>
+            <dl class="meta-dl">
+              ${renderMetaRow('文章 ID', `<span class="mono">${article.id}</span>`)}
+              ${renderMetaRow('机构 ID', article.org_id != null ? `<span class="mono">${article.org_id}</span>` : '—')}
+              ${renderMetaRow('采集来源', escapeHtml(article.source || '—'))}
+              ${renderMetaRow('正文状态', contentStatus)}
+            </dl>
+          </section>
+
+          <section class="meta-section">
+            <h3 class="meta-section-title">时间</h3>
+            <dl class="meta-dl">
+              ${renderMetaRow('发布时间', formatDateTime(article.publish_time))}
+              ${renderMetaRow('采集时间', formatDateTime(article.collected_at))}
+            </dl>
+          </section>
+
+          <section class="meta-section">
+            <h3 class="meta-section-title">链接</h3>
+            <dl class="meta-dl">
+              ${renderMetaUrl('原文 URL', article.url)}
+              ${renderMetaUrl('规范化 URL', article.canonical_url)}
+              ${renderMetaUrl('封面图', article.cover_url)}
+            </dl>
+          </section>
+        </div>`;
+    }
+
+    function bindCopyButtons(root) {
+      root.querySelectorAll('.copy-btn[data-copy]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const text = btn.dataset.copy || '';
+          try {
+            await navigator.clipboard.writeText(text);
+            btn.textContent = '已复制';
+            btn.classList.add('copied');
+            setTimeout(() => {
+              btn.textContent = '复制';
+              btn.classList.remove('copied');
+            }, 1600);
+          } catch (_) {
+            btn.textContent = '失败';
+          }
+        });
+      });
+    }
+
+    function renderList() {
+      if (!articles.length) {
+        rowsEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div>暂无文章</div></div>';
+        return;
+      }
+      if (!filteredArticles.length) {
+        rowsEl.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div><div>无匹配文章<br />请调整筛选条件</div></div>';
+        return;
+      }
+      rowsEl.innerHTML = filteredArticles.map((item, i) => `
+        <article class="article-card${item.id === selectedId ? ' active' : ''}" data-id="${item.id}" style="--i:${i}">
+          <div class="id-chip">${item.id}</div>
+          <div>
+            <div class="card-title">${escapeHtml(item.title)}</div>
+            <div class="card-meta">${escapeHtml(item.account_name || '未知公众号')} · ${formatTime(item.collected_at)}</div>
+          </div>
+          <span class="badge ${item.has_content ? '' : 'empty'}">${item.has_content ? item.text_length + ' 字' : '无正文'}</span>
+        </article>
+      `).join('');
+
+      rowsEl.querySelectorAll('.article-card').forEach((card) => {
+        card.addEventListener('click', () => loadDetail(Number(card.dataset.id)));
+      });
+    }
+
+    function renderDetailSkeleton() {
+      detailEl.innerHTML = `
+        <div class="detail-inner" style="padding:24px 28px">
+          <div class="skeleton skeleton-title"></div>
+          <div class="skeleton skeleton-block" style="width:90%"></div>
+          <div class="skeleton skeleton-block" style="width:75%"></div>
+          <div class="skeleton skeleton-block" style="width:60%"></div>
+        </div>`;
+    }
+
+    function renderDetail(article) {
+      currentArticle = article;
+      const hero = article.cover_url
+        ? `<div class="hero"><img src="${escapeHtml(article.cover_url)}" alt="" referrerpolicy="no-referrer" /><div class="hero-overlay"></div></div>`
+        : `<div class="hero-placeholder"></div>`;
+
+      const summary = article.summary
+        ? `<div class="summary">${escapeHtml(article.summary)}</div>`
+        : '';
+
+      let body = '';
+      if (activeTab === 'preview') {
+        if (article.content_html) {
+          body = `<div class="content-box article-preview">${prepareArticleHtml(article.content_html)}</div>`;
+        } else if (article.content_text) {
+          body = `<div class="content-box text">${escapeHtml(article.content_text)}</div><p class="preview-hint">（无 HTML，已回退显示纯文本）</p>`;
+        } else {
+          body = '<div class="content-box text">（无正文，可能触发微信验证或抓取失败）</div>';
+        }
+      } else if (activeTab === 'text') {
+        body = `<div class="content-box text">${escapeHtml(article.content_text || '（无纯文本正文）')}</div>`;
+      } else {
+        body = renderMetadataPanel(article);
+      }
+
+      const noteHtml = activeTab === 'preview'
+        ? '<p class="note">图片保存在 HTML 内的微信 CDN 链接，未下载到本地；预览失败时可点击上方原文链接。</p>'
+        : '';
+
+      detailEl.innerHTML = `
+        <div class="detail-inner">
+          ${hero}
+          <div class="detail-body">
+            <div class="detail-links">
+              <a class="link-btn" href="${escapeHtml(article.url)}" target="_blank" rel="noopener">在微信原文打开 ↗</a>
+              <button type="button" class="link-btn" data-sogou-account="${escapeHtml(article.account_name || '')}">搜狗搜此号 ↗</button>
+            </div>
+            <p class="sogou-hint">补采：在搜狗结果中打开文章 → Chrome 插件点「采集当前文章」；在搜狗列表页可用「批量入队（搜狗）」</p>
+            <h2>${escapeHtml(article.title)}</h2>
+            <div class="meta-grid">
+              <div class="meta-item">公众号<strong>${escapeHtml(article.account_name || '—')}</strong></div>
+              <div class="meta-item">发布时间<strong>${formatTime(article.publish_time)}</strong></div>
+              <div class="meta-item">采集时间<strong>${formatTime(article.collected_at)}</strong></div>
+              <div class="meta-item">来源<strong>${escapeHtml(article.source || '—')}</strong></div>
+              <div class="meta-item">正文字数<strong>${article.text_length.toLocaleString()} 字</strong></div>
+              <div class="meta-item">图片约<strong>${article.image_count} 张</strong></div>
+            </div>
+            ${summary}
+            <div class="tabs">
+              <button class="tab ${activeTab === 'preview' ? 'active' : ''}" data-tab="preview">阅读预览</button>
+              <button class="tab ${activeTab === 'text' ? 'active' : ''}" data-tab="text">纯文本</button>
+              <button class="tab ${activeTab === 'meta' ? 'active' : ''}" data-tab="meta">元数据</button>
+            </div>
+            ${body}
+            ${noteHtml}
+          </div>
+        </div>`;
+
+      detailEl.querySelectorAll('.tab').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          activeTab = btn.dataset.tab;
+          renderDetail(article);
+        });
+      });
+      detailEl.querySelectorAll('[data-sogou-account]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          openSogouWeixinSearch(btn.dataset.sogouAccount || article.account_name);
+        });
+      });
+      bindCopyButtons(detailEl);
+      syncSogouSearchButton();
+    }
+
+    async function loadDetail(id, { preserveTab = false } = {}) {
+      selectedId = id;
+      renderList();
+      renderDetailSkeleton();
+      try {
+        const resp = await fetch('/admin/articles/' + id, { headers: authHeaders() });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const article = await resp.json();
+        if (!preserveTab) activeTab = 'preview';
+        renderDetail(article);
+      } catch (err) {
+        detailEl.innerHTML = `<div class="empty-state error"><div class="empty-icon">⚠️</div><div>详情加载失败：${escapeHtml(err.message)}</div></div>`;
+      }
+    }
+
+    async function loadArticles({ refresh = false } = {}) {
+      const token = tokenInput.value.trim();
+      if (!token) {
+        setStats({ total: 0, withContent: 0, status: '请先填写 Token', isError: true });
+        return;
+      }
+
+      const prevSelectedId = selectedId;
+      const prevKeyword = filterInput.value;
+
+      sessionStorage.setItem('wc_admin_token', token);
+      setStats({
+        total: articles.length || 0,
+        withContent: articles.filter((a) => a.has_content).length,
+        status: refresh ? '刷新中…' : '加载中…',
+        isError: false,
+      });
+
+      if (refresh) {
+        refreshBtn.classList.add('refreshing');
+        refreshBtn.disabled = true;
+      } else {
+        rowsEl.innerHTML = '';
+        detailEl.innerHTML = '<div class="empty-state"><div class="loader"></div><div>正在拉取文章列表…</div></div>';
+      }
+
+      try {
+        const resp = await fetch('/admin/articles?limit=100', { headers: authHeaders() });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        articles = await resp.json();
+        filterInput.disabled = false;
+
+        populateAccountDropdown();
+        syncFilterControlsFromState();
+        setFilterBarEnabled(true);
+
+        if (refresh) {
+          filterInput.value = prevKeyword;
+        }
+
+        applyAllFilters({ adjustSelection: false });
+
+        const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        loadedStatusMessage = refresh ? `已刷新 ${now}` : '点击左侧切换文章';
+        syncStatsFromFilter();
+        if (!hasActiveFilters()) {
+          statStatus.textContent = loadedStatusMessage;
+        }
+
+        refreshBtn.disabled = false;
+
+        if (articles.length === 0) {
+          selectedId = null;
+          setFilterBarEnabled(false);
+          filterCountEl.innerHTML = '显示 <strong>0</strong> / 0 篇 · 基于已加载';
+          detailEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div>暂无文章</div></div>';
+          return;
+        }
+
+        const targetId = refresh && prevSelectedId && filteredArticles.some((a) => a.id === prevSelectedId)
+          ? prevSelectedId
+          : filteredArticles[0]?.id;
+
+        if (targetId != null) {
+          await loadDetail(targetId, { preserveTab: refresh });
+        } else {
+          selectedId = null;
+          renderFilteredEmptyDetail();
+        }
+      } catch (err) {
+        setStats({
+          total: articles.length || 0,
+          withContent: articles.filter((a) => a.has_content).length,
+          status: (refresh ? '刷新失败: ' : '加载失败: ') + err.message,
+          isError: true,
+        });
+        if (!refresh) {
+          detailEl.innerHTML = '';
+          rowsEl.innerHTML = '';
+          setFilterBarEnabled(false);
+        }
+        refreshBtn.disabled = articles.length === 0;
+      } finally {
+        refreshBtn.classList.remove('refreshing');
+      }
+    }
+
+    loadFilterState();
+    syncFilterControlsFromState();
+
+    document.getElementById('load').addEventListener('click', () => loadArticles());
+    refreshBtn.addEventListener('click', () => loadArticles({ refresh: true }));
+    filterInput.addEventListener('input', () => applyAllFilters());
+    filterAccountEl.addEventListener('change', () => applyAllFilters());
+    filterTimeEl.addEventListener('change', () => {
+      readFilterControlsIntoState();
+      filterDateFromEl.disabled = filterState.timePreset !== 'custom';
+      filterDateToEl.disabled = filterState.timePreset !== 'custom';
+      applyAllFilters();
+    });
+    filterTimeFieldEl.addEventListener('change', () => applyAllFilters());
+    filterDateFromEl.addEventListener('change', () => applyAllFilters());
+    filterDateToEl.addEventListener('change', () => applyAllFilters());
+    filterClearBtn.addEventListener('click', clearAllFilters);
+    openSogouSearchBtn.addEventListener('click', () => openSogouWeixinSearch());
+    openSogouTopbarBtn.addEventListener('click', () => openSogouWeixinFromTopbar());
+    tokenInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') loadArticles();
+    });
+
+    if (savedToken) {
+      loadArticles();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+"""微信文章 URL 标准化（用于候选池去重）。"""
+
+from __future__ import annotations
+
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+# 文章身份参数；sn/chksm/scene 等分享追踪参数不参与去重
+KEEP_QUERY_PARAMS = frozenset(
+    {"__biz", "mid", "idx", "src", "ver", "timestamp", "signature"}
+)
+STRIP_QUERY_PARAMS = frozenset(
+    {
+        "sn",
+        "chksm",
+        "scene",
+        "key",
+        "ascene",
+        "devicetype",
+        "version",
+        "lang",
+        "pass_ticket",
+        "exportkey",
+    }
+)
+
+
+def normalize_wechat_url(url: str | None) -> str | None:
+    if not url:
+        return None
+
+    parsed = urlparse(url.strip())
+    if not parsed.scheme:
+        parsed = urlparse(f"https://{url.strip()}")
+
+    if "mp.weixin.qq.com" not in parsed.netloc:
+        normalized = parsed._replace(fragment="", scheme="https")
+        return urlunparse(normalized)
+
+    # /s/SHORTCODE 形式：路径即身份，保留 path
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if len(path_parts) >= 2 and path_parts[0] == "s" and path_parts[1]:
+        normalized = parsed._replace(
+            fragment="",
+            query="",
+            scheme="https",
+            netloc="mp.weixin.qq.com",
+        )
+        return urlunparse(normalized)
+
+    query = parse_qs(parsed.query, keep_blank_values=False)
+    filtered: dict[str, str] = {}
+    for key, values in query.items():
+        if key in STRIP_QUERY_PARAMS:
+            continue
+        if key in KEEP_QUERY_PARAMS and values:
+            filtered[key] = values[0]
+        elif key.startswith("utm_"):
+            continue
+
+    normalized = parsed._replace(
+        fragment="",
+        query=urlencode(sorted(filtered.items())),
+        scheme="https",
+        netloc="mp.weixin.qq.com",
+    )
+    return urlunparse(normalized)
+
+
+def is_same_wechat_article(url_a: str | None, url_b: str | None) -> bool:
+    left = normalize_wechat_url(url_a)
+    right = normalize_wechat_url(url_b)
+    return bool(left and right and left == right)
+
+
+def extract_biz(url: str | None) -> str | None:
+    """从微信文章 URL 中提取 __biz 参数。
+
+    支持两种格式：
+      https://mp.weixin.qq.com/s?__biz=MzAxNDI4NTI4Mw==&mid=...
+      https://mp.weixin.qq.com/s/shortcode  （无 __biz，返回 None）
+    """
+    if not url:
+        return None
+    try:
+        parsed = urlparse(url)
+        biz = parse_qs(parsed.query).get("__biz")
+        return biz[0] if biz else None
+    except Exception:  # noqa: BLE001
+        return None

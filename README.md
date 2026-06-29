@@ -539,6 +539,114 @@ SITE_CONFIGS = {
    - 检查配置文件路径是否正确
    - 验证Python环境和依赖是否安装
 
+## 微信公众号定向采集系统（wechat_collector）
+
+基于 BasicWebCrawler 延伸的采集子系统，对 3000+ 组织做「搜狗 Playwright 自动发现 + Worker 抓取入库 + 浏览器插件补采 + 覆盖率监控」。
+
+> **完整使用手册（小白请从这里读）**：[`wechat_collector/README.md`](wechat_collector/README.md) 第 2 节
+
+### 快速启动（全自动，推荐）
+
+```bash
+cd BasicWebCrawler
+
+# 1. 依赖 + Playwright 浏览器
+pip install -r requirements-collector.txt
+playwright install chromium
+
+# 2. 配置（至少改 Token，并开启 SOGOU_PLAYWRIGHT_ENABLED=true）
+cp .env.example .env
+
+# 3. 数据库 + 公众号
+alembic upgrade head
+python -m wechat_collector.io.import_wechat_accounts samples/pilot_wechat_accounts.csv
+
+# 4. 三个终端分别运行：
+#    终端 1 — API
+uvicorn wechat_collector.api.app:app --reload --port 8787
+#    终端 2 — 搜狗发现（首次建议 SOGOU_HEADLESS=false ... sogou_poller --once 养 cookie）
+python -m wechat_collector.worker.sogou_poller
+#    终端 3 — 抓取入库
+python -m wechat_collector.worker
+```
+
+- 阅读台：`http://127.0.0.1:8787/admin`（粘贴 `.env` 里的 Token）
+- 管理配置：`http://127.0.0.1:8787/admin/manage`
+- 接口文档：`http://127.0.0.1:8787/docs`
+
+### 快速启动（仅插件，可选）
+
+```bash
+pip install -r requirements-collector.txt
+cp .env.example .env   # 设置 COLLECTOR_API_TOKEN
+alembic upgrade head
+python -m wechat_collector.io.import_wechat_accounts samples/pilot_wechat_accounts.csv
+uvicorn wechat_collector.api.app:app --reload --port 8787
+# Chrome 加载 extension/ 目录，打开微信文章后点「采集当前文章」
+```
+
+### 目录结构
+
+```
+wechat_collector/
+├── api/               # FastAPI 路由（articles / candidates / accounts / admin 等）
+├── db/                # SQLAlchemy ORM + SessionLocal
+├── discovery/         # 多源发现层
+│   └── providers/     # bing / baidu / sogou / sogou_playwright
+├── io/                # 命令行工具脚本
+│   ├── import_wechat_accounts.py   # 批量导入公众号 CSV
+│   ├── enqueue_wechat_urls.py      # URL 批量入候选池
+│   └── show_biz_status.py          # 查看 __biz 填充进度
+├── migrations/        # Alembic 迁移脚本（001~004）
+├── parsers/           # 微信文章 HTML 解析
+├── services/          # 业务逻辑（article / candidate / org）
+├── worker/
+│   ├── fetch_worker.py   # 候选池消费 Worker（fetch + parse + 入库）
+│   └── sogou_poller.py   # Playwright 搜狗发现 Worker
+└── README.md          # 完整使用手册
+extension/             # Chrome MV3 插件（手动 M1 + 自动队列 M2）
+samples/               # 示例 CSV 和 HTML 快照
+```
+
+### 主要 API 接口
+
+| 接口 | 说明 |
+|------|------|
+| `POST /api/articles` | 插件推送文章入库 |
+| `GET /api/crawl/tasks/next` | 插件拉取下一个抓取任务 |
+| `GET /api/accounts` | 查看所有公众号 |
+| `POST /api/discovery/run` | 手动触发多源发现 |
+| `GET /api/coverage/report` | 覆盖率报表 |
+| `POST /api/monitoring/refresh` | 刷新账号健康度 |
+| `GET /admin` | 文章后台（浏览器打开） |
+
+### 后台 Worker 进程
+
+```bash
+# Worker 1：处理候选池（fetch + parse + 入库），随机间隔防反爬
+python -m wechat_collector.worker
+
+# Worker 2：Playwright 搜狗发现（推荐，需 SOGOU_PLAYWRIGHT_ENABLED=true）
+SOGOU_PLAYWRIGHT_ENABLED=true python -m wechat_collector.worker.sogou_poller
+```
+
+### 数据表
+
+| 表 | 说明 |
+|----|------|
+| `organizations` | 组织主数据 |
+| `wechat_accounts` | 公众号账号（含 `biz`） |
+| `article_candidates` | 文章候选池（队列，含状态机） |
+| `articles` | 已采集正文 |
+| `account_health` | 公众号健康度统计 |
+| `discovery_source_stats` | 发现源运行统计 |
+
+### 调度与重试
+
+- 任务失败退避：10min → 1h → 6h，第 4 次升级 `manual` 人工处理
+- 账号限频：同一账号 `SCHEDULER_MAX_ACCOUNT_INTERVAL_SECONDS`（默认 60s）内不重复取任务
+- 发现源健康：连续空结果达阈值自动标 warning
+
 ## 贡献指南
 
 欢迎提交Issue和Pull Request来改进项目。在提交代码前，请确保：

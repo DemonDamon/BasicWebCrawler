@@ -10,7 +10,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -52,3 +52,8 @@ thirdparty/
 
 prds/
 .dev_log/
+
+# WeChat collector local DB
+wechat_collector.db
+.playwright/
+samples/snapshots/wechat_parse_fail_*.html

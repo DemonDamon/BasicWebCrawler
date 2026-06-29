@@ -1,0 +1,4 @@
+org_code,org_name,aliases,region,org_level,official_website,priority,status
+org_demo_001,示例市发展和改革委员会,"[""市发改委"",""发改局""]",示例省/示例市,市级,https://example.gov.cn/fgw,normal,active
+org_demo_002,示例区教育局,市教育局;区教育局,示例省/示例市,区级,normal,active
+org_demo_003,示例市生态环境局,,示例省/示例市,市级,high,active
