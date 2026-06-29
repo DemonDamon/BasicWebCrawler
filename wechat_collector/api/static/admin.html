@@ -1006,6 +1006,7 @@
             </div>
             <button class="btn btn-primary" id="load">加载文章</button>
             <button class="btn btn-secondary" id="refresh" type="button" title="重新拉取最新文章列表" disabled>刷新</button>
+            <button class="btn btn-secondary" id="open-sogou-topbar" type="button" title="在新标签打开搜狗微信搜索；优先左侧关键词，否则当前筛选/文章的公众号">搜狗微信 ↗</button>
             <a class="link-btn" href="/admin/manage" style="margin:0">采集管理</a>
           </div>
         </div>
@@ -1094,6 +1095,7 @@
     const filterClearBtn = document.getElementById('filter-clear');
     const filterCountEl = document.getElementById('filter-count');
     const openSogouSearchBtn = document.getElementById('open-sogou-search');
+    const openSogouTopbarBtn = document.getElementById('open-sogou-topbar');
 
     const FILTER_STORAGE_KEY = 'wc_admin_filters';
 
@@ -1315,10 +1317,11 @@
       applyAllFilters();
     }
 
-    function buildSogouWeixinSearchUrl(accountName) {
-      const q = (accountName || '').trim();
-      if (!q) return null;
-      return `https://weixin.sogou.com/weixin?type=2&query=${encodeURIComponent(q)}&ie=utf8&sort=1`;
+    function buildSogouWeixinSearchUrl(query) {
+      const q = (query || '').trim();
+      const base = 'https://weixin.sogou.com/weixin?type=2&ie=utf8&sort=1';
+      if (!q) return base;
+      return `${base}&query=${encodeURIComponent(q)}`;
     }
 
     function getSogouSearchQuery() {
@@ -1327,9 +1330,21 @@
       return '';
     }
 
+    function getTopbarSogouSearchQuery() {
+      const keyword = filterInput.value.trim();
+      if (keyword) return keyword;
+      return getSogouSearchQuery();
+    }
+
     function openSogouWeixinSearch(query) {
-      const url = buildSogouWeixinSearchUrl(query || getSogouSearchQuery());
-      if (!url) return;
+      const url = buildSogouWeixinSearchUrl(
+        query !== undefined ? query : getSogouSearchQuery()
+      );
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    function openSogouWeixinFromTopbar() {
+      const url = buildSogouWeixinSearchUrl(getTopbarSogouSearchQuery());
       window.open(url, '_blank', 'noopener,noreferrer');
     }
 
@@ -1747,6 +1762,7 @@
     filterDateToEl.addEventListener('change', () => applyAllFilters());
     filterClearBtn.addEventListener('click', clearAllFilters);
     openSogouSearchBtn.addEventListener('click', () => openSogouWeixinSearch());
+    openSogouTopbarBtn.addEventListener('click', () => openSogouWeixinFromTopbar());
     tokenInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') loadArticles();
     });
